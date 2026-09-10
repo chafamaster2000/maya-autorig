@@ -1,0 +1,572 @@
+tools:
+  - name: discover_procs
+    description: Report which AdvancedSkeleton procedures exist on the installed version and which capabilities resolve. Run first on a new machine or after upgrading AdvancedSkeleton.
+    source_file: scripts/discover_procs.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        keyword:
+          type: string
+          pattern: "^[A-Za-z0-9_]{0,64}$"
+          description: Only list installed procs whose name contains this substring, such as skin or fit.
+    output_schema: &standard_output
+      type: object
+      additionalProperties: true
+      required: [success]
+      properties:
+        success: {type: boolean}
+        message: {type: string}
+        context: {type: object}
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+      deferred_hint: false
+    next-tools:
+      on-success: [auto_place_fit_joints, autorig_oneshot]
+      on-failure: []
+
+  - name: auto_place_fit_joints
+    description: LEGACY - wraps asFitAutoPlace, which dies on arms-down models and hangs on five-finger hands. Prefer markers_propose + harness_run.
+    source_file: scripts/auto_place_fit_joints.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        mesh:
+          type: string
+          description: Transform name of the model to scan.
+        auto_scale:
+          type: boolean
+          default: true
+          description: Scale the FitSkeleton to the mesh before placing. Placement on a wrongly scaled fit lands every joint off.
+        tolerance:
+          type: number
+          minimum: 0
+          default: 0.0
+          description: Movement below this distance does not count as placed.
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 120
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: false
+    next-tools:
+      on-success: [build_advancedskeleton]
+      on-failure: [discover_procs]
+
+  - name: bind_skin
+    description: Bind a mesh to the AdvancedSkeleton deformation joints with an explicit binding algorithm.
+    source_file: scripts/bind_skin.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        evidence_dir: {type: string, description: "Run directory; when given, bind.json is recorded there."}
+        mesh: {type: string}
+        bind_method:
+          type: string
+          enum: [geodesic, heatmap, closest_distance, closest_hierarchy]
+          default: geodesic
+        skin_method:
+          type: string
+          enum: [linear, dual_quaternion, blended]
+          default: linear
+          description: linear (LBS) is what game engines evaluate and keeps volume within -4 percent across the pose gallery; dual_quaternion inflates the chest ~14 percent at full shoulder abduction (DQ bulging).
+        max_influences: {type: integer, minimum: 1, maximum: 16, default: 4}
+        dropoff_rate: {type: number, minimum: 0.1, maximum: 100, default: 4.0}
+        joint_root: {type: string, default: DeformationSystem}
+        replace_existing:
+          type: boolean
+          default: false
+          description: Delete an existing skinCluster before rebinding.
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 300
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: false
+    next-tools:
+      on-success: []
+      on-failure: [discover_procs]
+
+  - name: transfer_skin
+    description: Copy skin weights from an approved golden character onto a new mesh. The fast path for characters after the first.
+    source_file: scripts/transfer_skin.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [source_mesh, target_mesh]
+      properties:
+        source_mesh:
+          type: string
+          description: Skinned, approved mesh to copy weights from.
+        target_mesh:
+          type: string
+          description: Mesh receiving the weights.
+        surface_association:
+          type: string
+          enum: [closest_point, ray_cast, closest_component]
+          default: closest_point
+        influence_association:
+          type: string
+          enum: [label, name, closestJoint, oneToOne]
+          default: label
+        bind_target_if_needed:
+          type: boolean
+          default: true
+          description: Bind the target first when it has no skinCluster yet.
+        joint_root: {type: string, default: DeformationSystem}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 300
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: false
+    next-tools:
+      on-success: []
+      on-failure: [bind_skin]
+
+  - name: autorig_oneshot
+    description: LEGACY one-shot around asFitAutoPlace. Prefer markers_propose + harness_run (marker-guided, with evidence).
+    source_file: scripts/autorig_oneshot.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        mesh: {type: string, description: The character mesh to rig.}
+        template:
+          type: string
+          pattern: "^[A-Za-z0-9_.-]+$"
+          default: biped
+          description: Installed FitSkeleton template, such as biped or quadruped.
+        golden_mesh:
+          type: string
+          default: ""
+          description: Approved skinned mesh to inherit weights from. Empty means a fresh bind.
+        skip_auto_place:
+          type: boolean
+          default: false
+          description: Keep the template fit joints untouched, when they are already positioned.
+        bind_method:
+          type: string
+          enum: [geodesic, heatmap, closest_distance, closest_hierarchy]
+          default: geodesic
+        max_influences: {type: integer, minimum: 1, maximum: 16, default: 4}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 900
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: false
+    next-tools:
+      on-success: []
+      on-failure: [discover_procs]
+
+  - name: markers_propose
+    description: Create the 8 Mixamo-style marker locators (chin, groin, wrists, elbows, knees) plus optional shoulders/ankles, pre-placed from the mesh geometry, with a see-through front render. The user then drags whatever is wrong in the viewport.
+    source_file: scripts/markers_propose.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh, pose]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        mesh: {type: string, description: "Character mesh transform (cm, frozen, no history)."}
+        pose: {type: string, enum: [A, T, down], description: "Pose declared by the user (A, T, or arms down). It only steers where the wrist/elbow placeholders go when the arm detector finds nothing; the markers the user leaves ARE the pose. The detector is a cross-check, never a requirement."}
+        evidence_dir: {type: string, description: Run directory for JSON + PNG evidence.}
+        replace: {type: boolean, default: true, description: Rebuild AutoRigMarkers if it already exists.}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 60
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools:
+      on-success: [harness_run, fit_from_markers]
+      on-failure: []
+
+  - name: fit_from_markers
+    description: Read the (corrected) markers, re-centre them across the limb, fold L/R onto -X, derive the 22 body fit joints (spine depth by ray through the body), apply them to the FitSkeleton and verify (inside-body by ray parity, side convention, proportions, renders).
+    source_file: scripts/fit_from_markers.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        mesh: {type: string}
+        template: {type: string, default: bipedBendy.ma, description: "AS FitSkeleton template; bipedBendy = the yardstick (twists x2, spine inbetweens, bendy, foot sides); bipedGame = the lighter game rig."}
+        fingers: {type: string, enum: [auto, full, none], default: auto, description: "auto places the finger chains the mesh actually has (lobes found by connectivity; thumb; wrist re-derived from the palm), full forces five, none drops them and adds a WristEnd."}
+        evidence_dir: {type: string}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 60
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools:
+      on-success: [build_rig]
+      on-failure: [markers_propose]
+
+  - name: build_rig
+    description: Build the AdvancedSkeleton rig from the placed FitSkeleton with every modal-dialog condition pre-checked as an error, then verify the deformation joints sit exactly on the fit joints (mirrored on the left).
+    source_file: scripts/build_rig.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        mesh: {type: string}
+        evidence_dir: {type: string}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 300
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false, deferred_hint: false}
+    next-tools:
+      on-success: [bind_skin]
+      on-failure: [checkpoint_reopen]
+
+  - name: verify_skin
+    description: Prove the skinned mesh deforms - bend FKElbow_R and FKKnee_R (switching the limb to FK), measure which vertices move and which stay, restore, render each pose.
+    source_file: scripts/verify_skin.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        mesh: {type: string}
+        evidence_dir: {type: string}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 120
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools:
+      on-success: []
+      on-failure: [bind_skin]
+
+  - name: checkpoint
+    description: Save the scene as <scene>__<suffix>.mb (fit, build, skin) so every stage is recoverable.
+    source_file: scripts/checkpoint.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        suffix: {type: string, default: fit}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 30
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [], on-failure: []}
+
+  - name: checkpoint_reopen
+    description: Discard the live scene and reload a stage checkpoint (the way out of a half-built rig after a failed build).
+    source_file: scripts/checkpoint_reopen.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        suffix: {type: string, default: fit}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 60
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [fit_from_markers], on-failure: []}
+
+  - name: harness_run
+    description: From corrected markers to a verified skinned rig in one call - fit, build, bind, deformation test, with a checkpoint after each stage and JSON + render evidence in evidence_dir/summary.json. Stops at the first failing stage.
+    source_file: scripts/harness_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        mesh: {type: string}
+        template: {type: string, default: bipedBendy.ma, description: "AS FitSkeleton template; bipedBendy = the yardstick (twists x2, spine inbetweens, bendy, foot sides); bipedGame = the lighter game rig."}
+        fingers: {type: string, enum: [auto, full, none], default: auto}
+        evidence_dir: {type: string}
+        start_from: {type: string, enum: [fit, build, bind, skin], default: fit, description: fit reopens the fit checkpoint when a rig already exists.}
+        bind_method: {type: string, enum: [geodesic, heatmap, closest_distance, closest_hierarchy], default: geodesic}
+        skin_method: {type: string, enum: [linear, dual_quaternion, blended], default: linear}
+        max_influences: {type: integer, minimum: 1, maximum: 16, default: 4}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 900
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [], on-failure: [checkpoint_reopen]}
+
+  - name: pose_gallery
+    description: Drive the built, skinned rig through six animator-style poses (elbows 90, arms up IK, knee lift, crouch, torso twist, walk step), measure displacement per pose, restore every control exactly, render front+side per pose for a reviewer.
+    source_file: scripts/pose_gallery.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [mesh]
+      properties:
+        compact: {type: boolean, default: true, description: Return only passed/failed/images/evidence path (default). false returns the full stage dict; the detail is always in <evidence_dir>/<stage>.json.}
+        mesh: {type: string}
+        evidence_dir: {type: string}
+        poses: {type: array, items: {type: string}, description: Subset of pose names; empty means all.}
+        render: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 120
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [], on-failure: [bind_skin]}
+
+  - name: markers_set_visible
+    description: Show or hide the AutoRigMarkers locator group. fit_from_markers hides them automatically once they are consumed; use this to bring them back for a re-adjust, or to hide them manually.
+    source_file: scripts/markers_set_visible.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        visible: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [], on-failure: []}
+
+  - name: review_manifest
+    description: Collect every render of a run with its stage expectation into ONE manifest for a single reviewer call (sonnet), and decide whether a review is needed at all - skip_review is true when fit positions and bind settings are unchanged since the last recorded PASS.
+    source_file: scripts/review_manifest.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [evidence_dir]
+      properties:
+        evidence_dir: {type: string, description: Run directory holding summary.json and the stage JSON/PNG evidence.}
+        stages: {type: array, items: {type: string}, description: Subset of stages to include; empty means all.}
+        compact: {type: boolean, default: true, description: Return only the verdict fields plus the manifest path (default); the image list is in the manifest file for the reviewer. false inlines it.}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [review_mark], on-failure: []}
+
+  - name: review_mark
+    description: Record the reviewer's verdict (PASS or FAIL) against the run's content hash, so the next unchanged run skips the visual review.
+    source_file: scripts/review_mark.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [evidence_dir, verdict]
+      properties:
+        evidence_dir: {type: string}
+        verdict: {type: string, enum: [PASS, FAIL]}
+        notes: {type: string, default: ""}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+    next-tools: {on-success: [], on-failure: []}
+  - name: rig_profile
+    description: "Measure the AdvancedSkeleton rig + skin in the open scene (joints by taxonomy, controls, weight matrix stats, pose battery with volume/strain/bleed/twist) into rig_profile.json. Same probe for the artist's yardstick and for the auto-rig output."
+    source_file: scripts/rig_profile_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        mesh: {type: string, description: "Skinned mesh to measure; default: the skinned mesh with most vertices."}
+        evidence_dir: {type: string, description: "Where to write rig_profile.json and the pose renders; default autorig_evidence/profiles/<label>."}
+        label: {type: string, description: "Name of this profile (scene name by default)."}
+        render: {type: boolean, default: true}
+        deformation: {type: boolean, default: true, description: "Run the pose battery (bends, twist, gallery)."}
+        save_as_bar: {type: boolean, default: false, description: "Promote this rig to a yardstick (bars/<label>_profile.json next to the skill); rig_compare then accepts <label> as bar_path. No bar ships with the skill -- profile a rig you trust."}
+        compact: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 120
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+  - name: rig_compare
+    description: "Gauntlet grid: hold a rig_profile.json against a yardstick rig_profile.json row by row, thresholds relative to the bar's own numbers; writes gauntlet.json + gauntlet.md. Pure Python."
+    source_file: scripts/rig_compare_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [bar_path, ours_path]
+      properties:
+        bar_path: {type: string, description: "Required. A bar label (bars/<label>_profile.json) or a path to any rig_profile.json. Make one with rig_profile(save_as_bar=true) on a rig you trust."}
+        ours_path: {type: string, description: "rig_profile.json of the run under test."}
+        out_path: {type: string, description: "gauntlet.json to write (the .md grid goes next to it)."}
+        critic_path: {type: string, description: "critic.json from critic_verdicts, turns the blind A/B rows into hard rows."}
+        fit_path: {type: string, description: "The run's fit.json; its hand report scopes the finger rows to the chains the mesh actually has (a 4-lobe glove is not a missing pinky)."}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+  - name: critic_manifest
+    description: "Blind A/B for the gauntlet critic: pairs every pose render of the bar with ours as anonymous <id>_A/<id>_B copies, writes critic_manifest.json (for a fresh-context sonnet critic) and critic_key.json (never shown to it)."
+    source_file: scripts/critic_manifest_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [bar_dir, ours_dir]
+      properties:
+        bar_dir: {type: string, description: "Profile dir of the yardstick (has rig_profile.json + pose_*.png)."}
+        ours_dir: {type: string, description: "Profile dir of the run under test."}
+        seed: {type: integer, default: 0}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+  - name: critic_verdicts
+    description: "Decode the critic's picks ({pair id: A|B|tie}) with critic_key.json into per-pose verdicts (ours|bar|tie) and write critic.json for rig_compare."
+    source_file: scripts/critic_verdicts_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [ours_dir, picks]
+      properties:
+        ours_dir: {type: string}
+        picks: {type: object, description: "Pair id -> A | B | tie, as the critic answered."}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 15
+    annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false, deferred_hint: false}
+  - name: gauntlet_run
+    description: "The whole loop in one call: optional import+normalise of a raw OBJ/FBX, automatic markers, fit/build/bind/verify/props and rig_profile; with a `bar` it also runs the grid and the blind-critic manifest and returns score/failed rows/grid_md. Rerun after fixing a heuristic; done when wins is true."
+    source_file: scripts/gauntlet_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        source: {type: string, description: "Raw character file (.obj/.fbx) to import into a NEW scene; omit to rig the mesh already open."}
+        mesh: {type: string, default: Mesh}
+        pose: {type: string, enum: [A, T, down], default: A, description: "Declared arm pose; only steers placeholders when arms are not detected."}
+        bar: {type: string, description: "Yardstick to grade against (label in bars/ or a path). Omit to rig and profile without grading."}
+        scene_tag: {type: string, description: "Scene/evidence name; default gauntlet_<source basename>."}
+        template: {type: string, default: bipedBendy.ma, description: "AS FitSkeleton template; bipedBendy = the yardstick (twists x2, spine inbetweens, bendy, foot sides); bipedGame = the lighter game rig."}
+        skin_method: {type: string, enum: [linear, dual_quaternion], default: linear}
+        max_influences: {type: integer, default: 4, minimum: 1, maximum: 255, description: "Unity Standard = 4 bones per vertex."}
+        critic: {type: boolean, default: true, description: "Also write the blind A/B manifest for the critic."}
+        max_failed: {type: integer, default: 12}
+        compact: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 300
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false, deferred_hint: false}
+  - name: attach_props
+    description: "Bind the character's props (bag, bomb, weapon) rigidly to the rig: each prop gets a one-influence skinCluster on the deform joint whose bone runs closest to it. Run after bind_skin. Props with no rig, or a scene with no props, is a no-op."
+    source_file: scripts/attach_props_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        mesh: {type: string, default: Mesh, description: The body mesh; every other unskinned mesh in the scene is treated as a prop.}
+        props: {type: array, items: {type: string}, description: "Explicit prop mesh names. Omit to auto-detect."}
+        joint_root: {type: string, default: DeformationSystem}
+        evidence_dir: {type: string}
+        render: {type: boolean, default: true}
+        compact: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 120
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: false
+
+  - name: prep_mesh
+    description: "Import a raw OBJ/FBX into a NEW scene and normalise it for rigging: bake the importer's unit scale, strip any skeleton/skin, keep the main body mesh (drop props) or unite, feet on the floor, centred on X and Z, frozen, pivots zeroed."
+    source_file: scripts/prep_mesh_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string}
+        scale_xz: {type: number, default: 1.0, description: "Squeeze in X/Z after import (synthetic thin variant)."}
+        target_h: {type: number, description: "Scale to this height in cm; omit to keep the native size."}
+        name: {type: string, default: Mesh}
+        extras: {type: string, enum: [keep, drop, unite], default: keep, description: "What to do with meshes that are not the body. keep = leave them as props, normalised with the body, for attach_props to bind rigidly; drop = delete them (the body alone); unite = merge everything, which makes a prop deform like flesh."}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 60
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false, deferred_hint: false}
+  - name: skin_sweep
+    description: "Re-bind a built checkpoint (<scene>__build.mb) under several bind variants and score each on the gauntlet's skin/deformation rows against the bar; returns the table and the best variant. This is how the geodesic falloff 0.5 default was chosen."
+    source_file: scripts/skin_sweep_run.py
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [scene]
+      properties:
+        scene: {type: string, description: "Path of the __build.mb checkpoint (rig built, mesh unskinned)."}
+        mesh: {type: string, default: Mesh}
+        bar: {type: string, description: "Yardstick to grade against (label in bars/ or a path). Omit to rig and profile without grading."}
+        variants: {type: array, items: {type: string}, description: "Name prefixes of the variants to run; default all."}
+        compact: {type: boolean, default: true}
+    output_schema: *standard_output
+    execution: sync
+    affinity: main
+    enforce_thread_affinity: true
+    timeout_hint_secs: 300
+    annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false, deferred_hint: false}

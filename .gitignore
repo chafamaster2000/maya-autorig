@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Maya scene checkpoints and OBJ/asset dumps (evidence lives outside the repo)
+*.mb
+*.ma
+*.obj
+!tests/**/*.ma
+
+# Evidence renders (produced under ~/Documents/maya/.../autorig_evidence)
+autorig_evidence/
+*.png
+*.gif
+
+# OS
+.DS_Store
+
+# Yardstick profiles are yours: a bar is a rig you trust, not something to ship
+skill/maya-autorig/bars/

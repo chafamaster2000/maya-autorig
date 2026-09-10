@@ -1,0 +1,200 @@
+# Instalación — MCP + skill maya-autorig
+
+Este auto-rigger no habla con Maya directamente: corre **adentro** de Maya a
+través del ecosistema **DCC-MCP**. La cadena es:
+
+```
+Claude Code ──HTTP──> dcc-mcp gateway (127.0.0.1:9765) ──> Maya (adapter embebido)
+                       │                                      │
+                       └── descubre skills (tools.yaml) ──────┘
+                            maya-dev, maya-render, … y ESTE: maya-autorig
+```
+
+Verificado en esta máquina el 2026-09-09 con Maya 2027 (mayapy 3.13.9),
+`dcc-mcp-core` 0.20.24, `dcc-mcp-server` 0.20.24, `dcc-mcp-maya` 0.9.26.
+
+## 1. Instalar los paquetes DCC-MCP
+
+Tres paquetes (el adapter arrastra los otros dos):
+
+```bash
+python3 -m pip install --user dcc-mcp-maya      # trae dcc-mcp-core + dcc-mcp-server
+```
+
+- `dcc-mcp-core` — runtime de skills (catálogo, contrato, semántica).
+- `dcc-mcp-server` — binario Rust: **gateway**, sidecar y bridge stdio. Instala
+  el ejecutable `dcc-mcp-server` en `~/Library/Python/<ver>/bin`.
+- `dcc-mcp-maya` — adapter de Maya: embebe un server MCP Streamable-HTTP dentro
+  de Maya. Instala el CLI `dcc-mcp-maya`.
+
+Repos upstream: https://github.com/dcc-mcp/dcc-mcp-maya ·
+https://github.com/dcc-mcp/dcc-mcp-core
+
+> Asegurate de que `~/Library/Python/3.x/bin` esté en el `PATH`.
+
+## 2. Enganchar el adapter a Maya
+
+El CLI `dcc-mcp-maya` corre el "Install SOP": deja un módulo de Maya
+(`~/Library/Preferences/Autodesk/maya/modules/dcc-mcp-maya` + `.mod`) y un
+`userSetup.py` que arranca el server embebido cada vez que Maya abre.
+
+```bash
+dcc-mcp-maya install --yes           # idempotente; --dry-run para ver qué toca
+dcc-mcp-maya status                  # confirma módulo, userSetup y versión
+dcc-mcp-maya verify
+```
+
+Subcomandos: `install · status · verify · uninstall · upgrade`
+(`--dcc-path`, `--python`, `--module-zip`, `--json`).
+
+Abrí Maya después de instalar. En el arranque el adapter registra la instancia
+y el gateway la ve en `gateway://instances`.
+
+## 3. Levantar el gateway
+
+El gateway es el único puerto que toca Claude. En esta máquina corre así:
+
+```bash
+dcc-mcp-server gateway --host 127.0.0.1 --port 9765 \
+  --remote-host 0.0.0.0 --remote-port 59765 \
+  --gateway-idle-timeout-secs 300 --name dcc-mcp-gateway@$(hostname -s)
+```
+
+(Suele quedar levantado como sidecar `dcc-mcp-s`. Si no responde, este comando
+lo revive. Estado en `~/.dcc-mcp/` — receipts y logs de bootstrap.)
+
+## 4. Conectar Claude Code al gateway
+
+Claude Code habla con el gateway por HTTP. En `~/.claude.json`, `mcpServers`:
+
+```json
+"maya": { "type": "http", "url": "http://127.0.0.1:9765/mcp" }
+```
+
+o `claude mcp add --transport http maya http://127.0.0.1:9765/mcp`.
+
+El server MCP `maya` expone **cuatro** tools de workflow — `search`, `describe`,
+`load_skill`, `call` — más recursos (`gateway://instances`,
+`gateway://catalog`, `gateway://docs/agent-workflows`). No fan-out de acciones.
+
+## 5. Registrar la skill `maya-autorig`
+
+Las skills built-in viven en el paquete
+(`…/site-packages/dcc_mcp_maya/skills/`). Las **propias** van en el directorio
+de usuario, que el gateway también escanea:
+
+```bash
+tools/install_skill.sh          # copia skill/maya-autorig -> ~/.dcc-mcp/maya/skills/maya-autorig
+```
+
+**Copia, no symlink:** el scanner de skills (Rust, walkdir) no sigue symlinks
+de directorio — una skill linkeada queda silenciosamente invisible (verificado:
+`scan_and_load_strict` sobre el dir con el symlink descubre 0 skills). Después
+de editar la skill, re-corré el instalador y hacé que el server la re-escanee
+sin reiniciar Maya:
+
+```
+run_script tools/mcp_rescan.py   # inst.reload_skill_paths() + load_skill("maya-autorig")
+```
+
+(o reiniciá Maya: el server escanea `~/.dcc-mcp/maya/skills` al arrancar).
+Validación previa, sin tocar Maya — el arranque hace un scan *estricto* y una
+skill inválida en ese dir lanza excepción:
+
+```bash
+mayapy -c 'import sys,os; sys.path.insert(0,os.path.expanduser("~/Library/Python/3.13/lib/python/site-packages")); \
+  from dcc_mcp_core._core import scan_and_load_strict as f; print(f(extra_paths=["skill"], dcc_name="maya"))'
+```
+
+Detalles del contrato que el runtime impone (aprendidos registrándola): cada
+tool corre `main(**params)` de su `source_file` — la clave `entrypoint` no se
+honra, por eso los tools que mapean a otra función tienen un wrapper de tres
+líneas (`scripts/harness_run.py` → `harness.run`, etc.); `scripts/` entra al
+`sys.path` al ejecutar, así los módulos se importan entre sí; `next-tools`,
+`output_schema` y `timeout_hint_secs` son extensiones aceptadas.
+
+Después:
+
+```
+search(kind="skill", query="autorig")   ->  maya-autorig
+load_skill(skill_name="maya-autorig")
+```
+
+### Puente mientras tanto: correr vía `maya-dev`
+
+Hasta registrarla, la skill se ejecuta con la built-in **maya-dev**, que ya
+sabe cargar un proyecto y correr una función:
+
+```
+load_skill("maya-dev")
+attach_project("<repo>/skill/maya-autorig/scripts",
+               package_prefixes=[<todos los módulos>])   # hot-reload
+run_entrypoint("markers:propose", {mesh:"Mesh", pose:"A", evidence_dir:"…"})
+run_entrypoint("harness:run",     {mesh:"Mesh", evidence_dir:"…"})
+```
+
+`maya-render` da `render_frame` para la evidencia. Este es el modo con el que
+se verificó todo el pipeline; ver `README.md`.
+
+## 6. Prerequisito de contenido: AdvancedSkeleton
+
+El rig lo arma **AdvancedSkeleton 6.x** (probado 6.910), instalado en Maya
+aparte (es contenido, no pip). `discover_procs` reporta qué procs resuelven en
+la versión instalada; corrélo primero en una máquina nueva.
+
+## 6.b Windows: instalador
+
+Todo lo anterior en un script. PowerShell 5.1 (el que trae Windows) o 7:
+
+```powershell
+# ver qué haría, sin tocar nada
+powershell -ExecutionPolicy Bypass -File tools\install_windows.ps1 -DryRun
+
+# instalar
+powershell -ExecutionPolicy Bypass -File tools\install_windows.ps1
+```
+
+Hace, en orden, y cada paso reporta OK / SKIP / WARN / FAIL:
+
+1. **Preflight** — PowerShell, Python (`py -3` o `python`), Maya bajo
+   `Program Files\Autodesk`, y **AdvancedSkeleton**. AS es contenido, no un
+   paquete: el script lo busca y te dice dónde ponerlo, no lo instala.
+2. **`pip install --user dcc-mcp-maya`** (arrastra core + server).
+3. **PATH** — los console scripts caen en el `Scripts` de usuario, que Windows
+   no pone en el PATH; el instalador lo agrega a esta sesión y al PATH del
+   usuario, o el CLI `dcc-mcp-maya` "no existe" sin razón.
+4. **`dcc-mcp-maya install --yes`** — módulo de Maya + `userSetup.py`.
+5. **La skill** — `tools\install_skill.ps1`, copia a
+   `%USERPROFILE%\.dcc-mcp\maya\skills\maya-autorig` con `robocopy /MIR`.
+   **Copia, nunca junction ni symlink**: el scanner no sigue links y la skill
+   queda invisible sin decir nada.
+6. **Claude Code** — `claude mcp add --transport http maya <url>`; si no está
+   el CLI, imprime el JSON para pegar a mano.
+7. **Tests offline** — los mismos 67 de abajo, sin abrir Maya.
+
+Flags: `-DryRun`, `-SkipPackages`, `-SkipAdapter`, `-SkipClaude`,
+`-GatewayUrl`, `-Python`. Sale con código 1 si falló un paso requerido, así
+sirve de gate en el setup de una máquina.
+
+### Cuando el MCP se calla con Maya abierta
+
+Síntoma: Maya corriendo, plugin cargado, y toda llamada MCP falla con
+transport error. Nadie escucha en el 9765.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1
+```
+
+Causa (vista de verdad el 2026-09-10): un crash de Maya, o dos Mayas abiertas
+a la vez, dejan filas `__gateway__` en el registro reclamando un puerto donde
+no escucha nadie. Cada gateway nuevo las sonda, no obtiene respuesta y en vez
+de tomar el puerto sale con *"found an existing owner; exiting"*. Nadie liga
+el puerto, cada sidecar espera 15 s y se va, y las filas sobreviven a todos
+los reinicios: una fila de gateway **no lleva pid**, así que el barrendero no
+tiene con qué probar que está muerta.
+
+Por eso una fila de gateway se juzga **por su puerto**, no por un proceso: si
+algo contesta ahí, la fila está viva y no se toca (incluida la del gateway que
+está funcionando ahora). Las demás filas se juzgan por su pid.
+`services.json` se respalda antes de reescribirse.
