@@ -1,14 +1,18 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install (or refresh) the maya-autorig skill into the dcc-mcp user skills
-    directory on Windows. The PowerShell twin of tools/install_skill.sh.
+    Install (or refresh) the maya-autorig skill where each consumer reads it.
+    The PowerShell twin of tools/install_skill.sh.
 
 .DESCRIPTION
-    Copies skill/maya-autorig into %USERPROFILE%\.dcc-mcp\maya\skills\maya-autorig
-    as a real directory. A junction or symlink is NOT enough: the skill scanner
-    (Rust, walkdir) does not follow linked directories, so a linked skill is
-    silently invisible -- it discovers zero skills and says nothing.
+    1. Copies skill/maya-autorig into %USERPROFILE%\.dcc-mcp\maya\skills\maya-autorig
+       as a real directory. A junction or symlink is NOT enough: the skill
+       scanner (Rust, walkdir) does not follow linked directories, so a linked
+       skill is silently invisible -- it discovers zero skills and says nothing.
+    2. Copies SKILL.md into %USERPROFILE%\.codex\skills\maya-autorig and
+       %USERPROFILE%\.claude\skills\maya-autorig. The gateway's load_skill
+       registers the tools but never returns the instructions, so the workflow
+       text has to reach the agent as a skill of its own.
 
     Re-run after editing the skill, then rescan without restarting Maya:
         run_script tools/mcp_rescan.py  argv=["maya-autorig", "--force"]
@@ -66,9 +70,33 @@ if ($existing -and $existing.Attributes -band [IO.FileAttributes]::ReparsePoint)
     $existing = $null
 }
 
+# The version travels with every copy, so an update can tell a stale copy
+# from a current one without opening the repo.
+$versionFile = Join-Path $repoRoot 'VERSION'
+# Only when it differs: a fresh copy every run would bump the timestamp,
+# robocopy would count it as changed, and every run would say "restart Maya".
+$versionInSkill = Join-Path $source 'VERSION'
+if ((Test-Path -LiteralPath $versionFile) -and -not $DryRun) {
+    $same = (Test-Path -LiteralPath $versionInSkill) -and
+        ((Get-Content -LiteralPath $versionFile -Raw) -eq (Get-Content -LiteralPath $versionInSkill -Raw))
+    if (-not $same) { Copy-Item -LiteralPath $versionFile -Destination $versionInSkill -Force }
+}
+
 $files = @(Get-ChildItem -LiteralPath $source -Recurse -File |
     Where-Object { $_.FullName -notmatch '__pycache__' -and $_.Extension -ne '.pyc' })
 Write-Host ("files to install: {0}" -f $files.Count)
+
+# The agent-side copies. An agent counts as present when its CLI is on PATH
+# or its home dir exists (a CLI installed a minute ago has no home dir until
+# its first run).
+$agentHomes = @()
+foreach ($agent in 'codex', 'claude') {
+    $home_ = Join-Path (Get-HomeDirectory) ('.' + $agent)
+    if ((Get-Command $agent -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath $home_)) {
+        $agentHomes += @{ agent = $agent; dir = Join-Path (Join-Path $home_ 'skills') 'maya-autorig' }
+    }
+}
+foreach ($a in $agentHomes) { Write-Host ("agent skill ({0}): {1}\SKILL.md" -f $a.agent, $a.dir) }
 
 if ($DryRun) {
     Write-Host 'dry run: nothing copied'
@@ -88,6 +116,9 @@ if ($robocopy) {
         /XD '__pycache__' /XF '*.pyc' | Out-Null
     $code = $LASTEXITCODE
     if ($code -ge 8) { throw "robocopy failed with exit code $code" }
+    # Bit 1 of the bitmask: files were copied. The running Maya is then behind
+    # and needs a rescan (tools/mcp_rescan.py) or a restart.
+    if ($code -band 1) { Write-Host 'skill changed: restart Maya, or run tools/mcp_rescan.py, so the gateway picks it up' }
 } else {
     # pwsh on macOS/Linux, or a Windows install without robocopy.
     Get-ChildItem -LiteralPath $Destination -Force -ErrorAction SilentlyContinue |
@@ -106,4 +137,11 @@ Write-Host ("installed: {0} -> {1} ({2} files)" -f $source, $Destination, $insta
 if ($installed -ne $files.Count) {
     Write-Warning ("expected {0} files, found {1} -- check the destination" -f $files.Count, $installed)
 }
+
+foreach ($a in $agentHomes) {
+    if (-not (Test-Path -LiteralPath $a.dir)) { New-Item -ItemType Directory -Path $a.dir -Force | Out-Null }
+    Copy-Item -LiteralPath (Join-Path $source 'SKILL.md') -Destination (Join-Path $a.dir 'SKILL.md') -Force
+    if (Test-Path -LiteralPath (Join-Path $source 'VERSION')) { Copy-Item -LiteralPath (Join-Path $source 'VERSION') -Destination (Join-Path $a.dir 'VERSION') -Force }
+}
+
 Write-Host 'next: rescan without restarting Maya ->  run_script tools/mcp_rescan.py argv=["maya-autorig","--force"]'

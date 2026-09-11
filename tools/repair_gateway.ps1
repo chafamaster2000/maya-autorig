@@ -199,5 +199,5 @@ Write-Host 'Registry cleaned.' -ForegroundColor Green
 Write-Host 'Now reload the plugin so its sidecar spawns a gateway that can win the election:'
 Write-Host '  Maya > Windows > Settings/Preferences > Plug-in Manager > untick and re-tick dcc_mcp_maya_plugin'
 Write-Host '  (or restart Maya - one instance at a time, two racing is what creates the ghosts)'
-Write-Host 'Then in Claude Code:  /mcp   to reconnect.'
+Write-Host 'Then reconnect: in Claude Code type /mcp; in Codex start a new session (MCP servers are read at start-up).'
 exit 0

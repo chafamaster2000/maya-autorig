@@ -6,7 +6,7 @@ critic against a real bar, exit only when it wins). In one call:
   prep_mesh (optional: import, drop props, ground, freeze) -> markers.propose
   (automatic, no drag) -> harness.run (fit / build / bind / verify) ->
   rig_profile -> (optional) rig_compare against a bar of yours -> critic
-  manifest for the ONE blind sonnet call the agent makes afterwards.
+  manifest for the ONE blind fresh-context call the agent makes afterwards.
 
 Returns the score, the failed rows and the paths; the grid lives in
 <evidence_dir>/gauntlet.md. Rerun after fixing a heuristic; the loop ends
@@ -107,7 +107,7 @@ def run(source: Optional[str] = None, mesh: str = "Mesh", pose: str = "A", bar: 
             if bar_profile_dir:
                 m = review.critic_manifest(bar_profile_dir, os.path.dirname(prof["profile_path"]))
                 out["critic_manifest"] = m["manifest"]
-                out["critic_next"] = ("ONE fresh-context critic call (sonnet) with critic_manifest; then "
+                out["critic_next"] = ("ONE fresh-context critic call with critic_manifest (a subagent, or tools/review_run.py); then "
                                       "critic_verdicts(ours_dir, picks) and rig_compare(critic_path=...)")
             else:
                 out["critic_manifest"] = None

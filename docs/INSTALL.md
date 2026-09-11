@@ -4,7 +4,7 @@ Este auto-rigger no habla con Maya directamente: corre **adentro** de Maya a
 través del ecosistema **DCC-MCP**. La cadena es:
 
 ```
-Claude Code ──HTTP──> dcc-mcp gateway (127.0.0.1:9765) ──> Maya (adapter embebido)
+Codex / Claude Code ──HTTP──> dcc-mcp gateway (127.0.0.1:9765) ──> Maya (adapter embebido)
                        │                                      │
                        └── descubre skills (tools.yaml) ──────┘
                             maya-dev, maya-render, … y ESTE: maya-autorig
@@ -52,7 +52,7 @@ y el gateway la ve en `gateway://instances`.
 
 ## 3. Levantar el gateway
 
-El gateway es el único puerto que toca Claude. En esta máquina corre así:
+El gateway es el único puerto que toca el agente. En esta máquina corre así:
 
 ```bash
 dcc-mcp-server gateway --host 127.0.0.1 --port 9765 \
@@ -63,19 +63,43 @@ dcc-mcp-server gateway --host 127.0.0.1 --port 9765 \
 (Suele quedar levantado como sidecar `dcc-mcp-s`. Si no responde, este comando
 lo revive. Estado en `~/.dcc-mcp/` — receipts y logs de bootstrap.)
 
-## 4. Conectar Claude Code al gateway
+## 4. Conectar el agente al gateway (Claude Code y Codex)
 
-Claude Code habla con el gateway por HTTP. En `~/.claude.json`, `mcpServers`:
+Los dos hablan con el gateway por HTTP (streamable). El instalador registra
+el servidor en los dos; a mano:
+
+```bash
+claude mcp add --transport http maya http://127.0.0.1:9765/mcp
+codex  mcp add maya --url http://127.0.0.1:9765/mcp
+```
+
+que dejan, respectivamente, en `~/.claude.json` (`mcpServers`):
 
 ```json
 "maya": { "type": "http", "url": "http://127.0.0.1:9765/mcp" }
 ```
 
-o `claude mcp add --transport http maya http://127.0.0.1:9765/mcp`.
+y en `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.maya]
+url = "http://127.0.0.1:9765/mcp"
+```
+
+Los dos leen sus servidores **al arrancar**: después de agregarlo, Claude Code
+reconecta con `/mcp`; Codex necesita una sesión nueva.
 
 El server MCP `maya` expone **cuatro** tools de workflow — `search`, `describe`,
 `load_skill`, `call` — más recursos (`gateway://instances`,
 `gateway://catalog`, `gateway://docs/agent-workflows`). No fan-out de acciones.
+Cada cliente los prefija a su manera (Claude Code: `mcp__maya__call`); los
+verbos son los mismos.
+
+**`load_skill` registra tools, no devuelve instrucciones.** El texto del flujo
+(`SKILL.md`: orden de uso, una sola revisión, crítico ciego) le llega al agente
+como skill propia: el instalador lo copia a `~/.codex/skills/maya-autorig/` y
+`~/.claude/skills/maya-autorig/`. Sin esa copia el agente tiene las
+herramientas y no sabe el orden.
 
 ## 5. Registrar la skill `maya-autorig`
 
@@ -142,16 +166,40 @@ El rig lo arma **AdvancedSkeleton 6.x** (probado 6.910), instalado en Maya
 aparte (es contenido, no pip). `discover_procs` reporta qué procs resuelven en
 la versión instalada; corrélo primero en una máquina nueva.
 
-## 6.b Windows: instalador
+## 6.b Instaladores
 
-Todo lo anterior en un script. PowerShell 5.1 (el que trae Windows) o 7.
+Todo lo anterior en un script por plataforma, con el mismo formato y los
+mismos pasos: `tools/install_windows.ps1` (PowerShell 5.1, el que trae
+Windows, o 7) y `tools/install_unix.sh` (macOS / Linux). Los dos terminan con
+un bloque **"What changed -> what to do"** calculado a partir de lo que
+cambió de verdad: qué reiniciar (Maya si cambió la copia de la skill o el
+adapter y estaba abierta; sesión nueva de Codex si recién se registró el
+servidor; `/mcp` en Claude Code; login si recién se instaló un CLI) o que no
+hay nada que reiniciar.
 
-**Windows** — hacé doble clic en `install.bat`. Si preferís una terminal:
+### Sin clonar: el link
+
+```
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/tools/bootstrap.ps1 | iex"
+curl -fsSL https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/install.sh | bash
+```
+
+Clonan en `~/maya-autorig` la primera vez y corren el instalador. Las veces
+siguientes comparan el archivo `VERSION` del clon con el de GitHub: si es el
+mismo y la copia instalada y los registros MCP están en su lugar, terminan
+con *already up to date, nothing to restart*; si no, hacen `git pull
+--ff-only`, imprimen `updated: X -> Y` y corren el instalador. `-Reinstall`
+/ `--reinstall` fuerza el instalador igual.
+
+### Windows
+
+Hacé doble clic en `install.bat`. Si preferís una terminal:
 
 ```
 install.bat                 rem instala todo
 install.bat -DryRun         rem muestra qué haría, sin tocar nada
-install.bat -SkipPrereqs    rem no instala Python / Node / Claude Code
+install.bat -SkipPrereqs    rem no instala Python / Node / Claude Code / Codex
+install.bat -SkipCodex      rem sólo Claude Code (-SkipClaude: sólo Codex)
 ```
 
 `install.bat` existe porque Windows bloquea los `.ps1` bajados de internet:
@@ -177,13 +225,30 @@ Hace, en orden, y cada paso reporta OK / SKIP / WARN / FAIL:
    `%USERPROFILE%\.dcc-mcp\maya\skills\maya-autorig` con `robocopy /MIR`.
    **Copia, nunca junction ni symlink**: el scanner no sigue links y la skill
    queda invisible sin decir nada.
-6. **Claude Code** — `claude mcp add --transport http maya <url>`; si no está
-   el CLI, imprime el JSON para pegar a mano.
-7. **Tests offline** — los mismos 67 de abajo, sin abrir Maya.
+6. **Agentes** — instala el CLI que falte (`@anthropic-ai/claude-code`,
+   `@openai/codex`, por npm) y registra el gateway en cada uno: `claude mcp
+   add --transport http maya <url>` y `codex mcp add maya --url <url>`. Antes
+   de registrar pregunta si ya estaba (`<cli> mcp get maya`): eso decide si
+   ese agente necesita sesión nueva. Si un CLI no está y no se pudo
+   instalar, imprime lo que hay que pegar a mano.
+7. **Verificación** — scan estricto de la skill instalada, `dcc-mcp-maya
+   verify`, y los tests offline cuando hay `tests/`.
 
 Flags: `-DryRun`, `-SkipPackages`, `-SkipAdapter`, `-SkipClaude`,
-`-GatewayUrl`, `-Python`. Sale con código 1 si falló un paso requerido, así
-sirve de gate en el setup de una máquina.
+`-SkipCodex`, `-GatewayUrl`, `-Python`. Sale con código 1 si falló un paso
+requerido, así sirve de gate en el setup de una máquina.
+
+### macOS / Linux
+
+```bash
+./install.sh --dry-run
+./install.sh
+```
+
+Mismos pasos y mismos flags en minúscula (`--skip-codex`, `--gateway-url`...).
+Agrega el `bin` de Python de usuario al PATH de la sesión y del perfil de la
+shell (`~/.zprofile` o `~/.bashrc`, con un comentario `maya-autorig` para no
+duplicarlo). Node viene de Homebrew cuando hay; si no, avisa y sigue.
 
 ### What the installer does and does not install
 
@@ -196,7 +261,9 @@ Installs, on a machine that already has Maya and Python:
 | `dcc-mcp-maya` | the Maya adapter: a Maya module plus the `userSetup.py` that starts the embedded MCP server every time Maya opens |
 | the per-user `Scripts` directory on `PATH` | Windows leaves it off, which makes the adapter CLI "not found" for no reason |
 | `maya-autorig` | this skill, copied into the dcc-mcp user skills directory |
+| the agent-side skill | `SKILL.md` + `VERSION` into `~/.codex/skills/maya-autorig` and `~/.claude/skills/maya-autorig` |
 | the Claude Code entry | `claude mcp add --transport http maya http://127.0.0.1:9765/mcp` |
+| the Codex entry | `codex mcp add maya --url http://127.0.0.1:9765/mcp` |
 
 The first three come from a single `pip install dcc-mcp-maya`, which pulls
 the other two. numpy is not installed: the skill runs inside Maya, which
@@ -210,8 +277,8 @@ ships its own.
   package. The installer looks for it and points at where to put it. Nothing
   can be rigged without it.
 - **Python.** Required, checked, and the run fails without it.
-- **Claude Code itself.** If the `claude` CLI is absent the installer prints
-  the JSON to paste into `~/.claude.json` instead.
+- **Logins.** Claude Code and Codex are installed when missing (npm), but
+  each needs its own login once; the installer says so in its final block.
 
 **Nothing starts a gateway.** That is on purpose: the sidecar inside Maya
 launches one when Maya opens, and a hand-started gateway competes with it.

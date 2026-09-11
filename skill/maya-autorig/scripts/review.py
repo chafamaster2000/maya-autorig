@@ -1,7 +1,7 @@
 """One visual review per run, not one per stage -- and none when nothing changed.
 
 The renders are the only thing a script cannot judge, so they go to a reviewer
-subagent. That was the dominant cost of a run: ~55k tokens per review, seven
+in a fresh context (a subagent, or `tools/review_run.py` from the shell). That was the dominant cost of a run: ~55k tokens per review, seven
 reviews per run (one per stage, plus re-reviews after every tweak), with the
 cost fixed per call rather than per image. Two levers, both here:
 
@@ -31,7 +31,8 @@ INSTRUCTIONS = (
     "Review ALL the images listed in this manifest in ONE pass. For each stage, judge the "
     "images against that stage's `expectation` text and answer PASS or FAIL with one short "
     "reason. Do not describe the images; do not return them. End with a single line "
-    "'OVERALL: PASS' or 'OVERALL: FAIL (reasons)'. Use the cheapest capable model ({})."
+    "'OVERALL: PASS' or 'OVERALL: FAIL (reasons)'. Use the cheapest capable vision model "
+    "({} in Claude Code; whatever the client's small model is elsewhere)."
 ).format(REVIEWER_MODEL)
 SLIM_KEYS = ("evidence_dir", "content_hash", "all_stages_passed", "image_count",
              "skip_review", "max_position_delta_cm", "position_tol_cm",
@@ -194,7 +195,8 @@ CRITIC_INSTRUCTIONS = (
     "For every pair answer exactly one of A, B or tie. A tie is allowed only when, after comparing both "
     "images carefully, you find no difference in pose readability, joint placement or skin quality; if one "
     "reads the pose better or deforms more cleanly, pick it. Return "
-    "ONLY a JSON object {{\"<pair id>\": \"A\"|\"B\"|\"tie\", ...}} and nothing else. Model: {}"
+    "ONLY a JSON object {{\"<pair id>\": \"A\"|\"B\"|\"tie\", ...}} and nothing else. "
+    "Cheapest capable vision model ({} in Claude Code)."
 ).format(REVIEWER_MODEL)
 
 

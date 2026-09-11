@@ -1,4 +1,4 @@
-# Guía rápida (Windows)
+# Guía rápida
 
 Riggear un personaje en Maya sin tocar un solo hueso a mano.
 
@@ -18,22 +18,38 @@ Todo lo demás lo instala el instalador solo.
 
 ---
 
-## Paso 1 — Instalar
+## Paso 1 — Instalar (o actualizar)
 
-Bajá o cloná este repositorio y **hacé doble clic en `install.bat`**.
+Abrí **Codex** o **Claude Code** — el que uses — y pegale este mensaje:
 
-Eso es todo. Va a instalar Python, Node, Claude Code, el puente con Maya y
-esta herramienta. Al final te muestra una tabla con cada paso en verde.
+> Instalá https://github.com/chafamaster2000/maya-autorig y dejámelo configurado.
 
-Si preferís verlo antes sin que toque nada, abrí una terminal en la carpeta y
-escribí:
+Eso es todo. El agente baja la herramienta y corre el instalador, que instala
+Python, Node, el puente con Maya, esta herramienta, y la deja conectada **en
+los dos agentes** (Codex y Claude Code), aunque vos uses uno solo. Al final
+te muestra una tabla con cada paso en verde y un bloque **"What changed ->
+what to do"** que dice, en orden, qué tenés que hacer vos: a veces es
+*reiniciar Maya*, a veces *abrir una sesión nueva del agente*, y a veces
+*nada*. El agente te lo repite en castellano. Hacé exactamente eso, ni más
+ni menos.
+
+La primera vez, cada agente te va a pedir que inicies sesión una vez
+(`codex login`, o abrir `claude`). Eso lo hacés vos: el instalador no puede.
+
+**Para actualizar, pegale el mismo link otra vez.** No hace falta que sepas
+qué versión tenés: el comando compara tu copia con la de GitHub y, si es la
+misma y está todo en su lugar, te dice *ya está al día, no hay nada que
+reiniciar*. Si hay una nueva, la baja y te dice qué reiniciar.
+
+Si preferís verlo antes sin que toque nada, o correrlo vos mismo:
 
 ```
-install.bat -DryRun
+install.bat -DryRun        (Windows, desde la carpeta bajada)
+./install.sh --dry-run     (macOS / Linux)
 ```
 
 **Si algo sale en rojo**, la tabla te dice cuál fue y por qué. Lo más común es
-que falte Maya o AdvancedSkeleton: instalalos y volvé a correr `install.bat`.
+que falte Maya o AdvancedSkeleton: instalalos y volvé a pegar el link.
 Correrlo dos veces no rompe nada.
 
 ---
@@ -48,7 +64,7 @@ Al abrirse, Maya se conecta sola. No hay que apretar nada.
 
 ## Paso 3 — Riggear
 
-Abrí Claude Code en la carpeta donde tenés tus personajes y pedile:
+Abrí Codex o Claude Code en la carpeta donde tenés tus personajes y pedile:
 
 > Cargá la skill maya-autorig y riggeá `C:\personajes\heroe.fbx`
 
@@ -89,7 +105,7 @@ etapa no sigue: te lo dice y ahí se queda.
 
 ## Si algo no anda
 
-**Maya abierta pero Claude no le habla.** Se cayó el puente. Abrí una terminal
+**Maya abierta pero el agente no le habla.** Se cayó el puente. Abrí una terminal
 en la carpeta y corré:
 
 ```
@@ -97,8 +113,9 @@ powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1
 ```
 
 Después destildá y volvé a tildar `dcc_mcp_maya_plugin` en el Plug-in Manager
-de Maya (Windows > Settings/Preferences > Plug-in Manager), y en Claude Code
-escribí `/mcp` para reconectar.
+de Maya (Windows > Settings/Preferences > Plug-in Manager). Después, en Claude
+Code escribí `/mcp` para reconectar; en Codex cerrá la sesión y abrí una nueva
+(Codex lee sus servidores al arrancar).
 
 Esto pasa sobre todo si abriste **dos Mayas a la vez**. Abrí de a una.
 

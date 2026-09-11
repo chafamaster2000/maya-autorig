@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     Set up maya-autorig on Windows end to end: the DCC-MCP packages, the Maya
-    adapter, this skill, and the Claude Code connection.
+    adapter, this skill, and the agent connections (Claude Code and Codex).
 
 .DESCRIPTION
     Every step is idempotent and reports OK / SKIP / FAIL; the script exits
@@ -11,7 +11,7 @@
 
     The chain it builds:
 
-        Claude Code --HTTP--> dcc-mcp gateway (127.0.0.1:9765) --> Maya adapter
+        Claude Code / Codex --HTTP--> dcc-mcp gateway (127.0.0.1:9765) --> Maya adapter
                                         |                              |
                                         +-- scans skills --------------+
                                             ...including maya-autorig
@@ -23,7 +23,7 @@
     Report every step and change nothing.
 
 .PARAMETER SkipPrereqs
-    Do not install Python, Node.js or Claude Code even when they are missing
+    Do not install Python, Node.js, Claude Code or Codex even when they are missing
     (they are installed through winget by default).
 
 .PARAMETER SkipPackages
@@ -33,10 +33,13 @@
     Do not run 'dcc-mcp-maya install' (the Maya module is already hooked up).
 
 .PARAMETER SkipClaude
-    Do not register the MCP server with Claude Code.
+    Do not register the MCP server with Claude Code (nor install it).
+
+.PARAMETER SkipCodex
+    Do not register the MCP server with Codex (nor install it).
 
 .PARAMETER GatewayUrl
-    MCP endpoint Claude Code should talk to. Default http://127.0.0.1:9765/mcp
+    MCP endpoint the agents should talk to. Default http://127.0.0.1:9765/mcp
 
 .PARAMETER Python
     Python launcher to use. Default: 'py -3' when present, else 'python'.
@@ -54,6 +57,7 @@ param(
     [switch] $SkipPackages,
     [switch] $SkipAdapter,
     [switch] $SkipClaude,
+    [switch] $SkipCodex,
     [string] $GatewayUrl = 'http://127.0.0.1:9765/mcp',
     [string] $Python
 )
@@ -63,6 +67,14 @@ $ErrorActionPreference = 'Stop'
 
 $script:Steps = New-Object System.Collections.ArrayList
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
+
+$script:Version = 'unknown'
+try { $script:Version = (Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'VERSION') -ErrorAction Stop | Select-Object -First 1).Trim() } catch { }
+# Only things that actually changed, each with the restart or login it costs:
+# maya | restart-codex | restart-claude | login-codex | login-claude | shell
+$script:Changes = @()
+function Add-Change { param([string] $What, [string] $Why) $script:Changes += [pscustomobject]@{ What = $What; Why = $Why } }
+function Test-MayaRunning { return [bool]@(Get-Process -Name 'maya' -ErrorAction SilentlyContinue).Count }
 
 function Add-Step {
     param([string] $Name, [string] $Status, [string] $Detail = '', [switch] $Required)
@@ -92,15 +104,36 @@ function Invoke-Tool {
 }
 
 function Resolve-Python {
+    # Which Python owns the DCC-MCP packages matters: the adapter's lifecycle
+    # CLI runs its preflight with mayapy, and a second install under another
+    # Python leaves two copies of the CLI, one of them broken. Preference:
+    #   -Python  >  the Python of an existing dcc-mcp-maya (its Scripts dir)
+    #            >  mayapy.exe of the newest Maya found  >  py -3 / python
     if ($Python) {
         $parts = $Python -split '\s+'
-        return [pscustomobject]@{ File = $parts[0]; Prefix = @($parts[1..($parts.Count - 1)] | Where-Object { $_ }) }
+        return [pscustomobject]@{ File = $parts[0]; Prefix = @($parts[1..($parts.Count - 1)] | Where-Object { $_ }); Why = '-Python' }
+    }
+    $appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path (Get-HomeDirectory) 'AppData\Roaming' }
+    foreach ($scripts in @(Get-ChildItem -LiteralPath (Join-Path $appData 'Python') -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'Scripts' })) {
+        if (Test-Path -LiteralPath (Join-Path $scripts 'dcc-mcp-maya.exe')) {
+            # ...\Python\Python313\Scripts -> the interpreter whose user site
+            # this is; `py -3.13` resolves it.
+            if ((Split-Path -Leaf (Split-Path -Parent $scripts)) -match 'Python(\d)(\d+)') {
+                $py = Get-Command py.exe -ErrorAction SilentlyContinue
+                if ($py) { return [pscustomobject]@{ File = $py.Source; Prefix = @('-' + $Matches[1] + '.' + $Matches[2]); Why = "owns the existing dcc-mcp-maya in $scripts" } }
+            }
+        }
+    }
+    foreach ($root in @($script:MayaRoots | Sort-Object -Descending)) {
+        $mayapy = Join-Path (Join-Path $root 'bin') 'mayapy.exe'
+        if (Test-Path -LiteralPath $mayapy) { return [pscustomobject]@{ File = $mayapy; Prefix = @(); Why = "mayapy of $root" } }
     }
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($py) { return [pscustomobject]@{ File = $py.Source; Prefix = @('-3') } }
+    if ($py) { return [pscustomobject]@{ File = $py.Source; Prefix = @('-3'); Why = 'py -3' } }
     foreach ($name in 'python.exe', 'python3', 'python') {
         $c = Get-Command $name -ErrorAction SilentlyContinue
-        if ($c) { return [pscustomobject]@{ File = $c.Source; Prefix = @() } }
+        if ($c) { return [pscustomobject]@{ File = $c.Source; Prefix = @(); Why = "$name on PATH" } }
     }
     return $null
 }
@@ -139,6 +172,11 @@ function Install-WithWinget {
 
 Write-Host ''
 Write-Host 'maya-autorig - Windows setup' -ForegroundColor Cyan
+$repoVersion = 'not a git clone'
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    try { $repoVersion = (& git -C (Split-Path -Parent $PSScriptRoot) describe --tags --always 2>$null | Out-String).Trim() } catch { }
+}
+Write-Host ("version: {0}  (git: {1})" -f $script:Version, $repoVersion)
 Write-Host ('repo: {0}' -f $script:RepoRoot)
 if ($DryRun) { Write-Host 'DRY RUN - nothing will be changed' -ForegroundColor Yellow }
 Write-Host ''
@@ -146,6 +184,21 @@ Write-Host ''
 # --------------------------------------------------------------------------- #
 Write-Host '1. Preflight'
 Add-Step 'PowerShell 5.1+' 'OK' ("version {0}" -f $PSVersionTable.PSVersion) -Required
+
+# Maya: needed to run anything, but not to lay the files down.
+$script:MayaRoots = @()
+foreach ($base in @("$env:ProgramFiles\Autodesk", 'C:\Program Files\Autodesk')) {
+    if ($base -and (Test-Path -LiteralPath $base)) {
+        $script:MayaRoots += @(Get-ChildItem -LiteralPath $base -Directory -Filter 'Maya*' -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName })
+    }
+}
+$script:MayaRoots = @($script:MayaRoots | Sort-Object -Unique)
+if ($script:MayaRoots.Count -gt 0) {
+    Add-Step 'Maya' 'OK' ($script:MayaRoots -join '; ')
+} else {
+    Add-Step 'Maya' 'WARN' 'no Maya found under Program Files\Autodesk; the skill installs anyway, but nothing can run'
+}
 
 # Anything that can be installed from a package source, is. What is left out
 # is left out for a reason, not for lack of trying: Maya and AdvancedSkeleton
@@ -161,26 +214,11 @@ if (-not $py -and -not $SkipPrereqs -and -not $DryRun) {
 }
 if ($py) {
     $v = Invoke-Tool $py.File (@($py.Prefix) + @('--version'))
-    Add-Step 'Python' 'OK' ("{0} {1} -> {2}" -f $py.File, ($py.Prefix -join ' '), $v.Output) -Required
+    Add-Step 'Python' 'OK' ("{0} {1} -> {2} ({3})" -f $py.File, ($py.Prefix -join ' '), $v.Output, $py.Why) -Required
 } elseif ($SkipPrereqs) {
     Add-Step 'Python' 'FAIL' 'no Python and -SkipPrereqs was passed' -Required
 } else {
     Add-Step 'Python' 'FAIL' 'Python is still not on PATH after the install; reopen the shell and re-run' -Required
-}
-
-# Maya: needed to run anything, but not to lay the files down.
-$mayaRoots = @()
-foreach ($base in @("$env:ProgramFiles\Autodesk", 'C:\Program Files\Autodesk')) {
-    if ($base -and (Test-Path -LiteralPath $base)) {
-        $mayaRoots += @(Get-ChildItem -LiteralPath $base -Directory -Filter 'Maya*' -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.FullName })
-    }
-}
-$mayaRoots = @($mayaRoots | Sort-Object -Unique)
-if ($mayaRoots.Count -gt 0) {
-    Add-Step 'Maya' 'OK' ($mayaRoots -join '; ')
-} else {
-    Add-Step 'Maya' 'WARN' 'no Maya found under Program Files\Autodesk; the skill installs anyway, but nothing can run'
 }
 
 # AdvancedSkeleton is content: check, never install.
@@ -216,10 +254,23 @@ if ($SkipPackages) {
     Add-Step 'pip install dcc-mcp-maya' 'FAIL' 'no Python' -Required
 } else {
     # dcc-mcp-maya pulls dcc-mcp-core (skill runtime) and dcc-mcp-server (the
-    # Rust gateway binary) with it.
+    # Rust gateway binary) with it. The version before and after tells whether
+    # Maya is now running an old adapter.
+    function Get-AdapterVersion {
+        $o = Invoke-Tool $py.File (@($py.Prefix) + @('-m', 'pip', 'show', 'dcc-mcp-maya'))
+        if ($o.Output -match 'Version:\s*(\S+)') { return $Matches[1] }
+        return ''
+    }
+    $before = Get-AdapterVersion
     $r = Invoke-Tool $py.File (@($py.Prefix) + @('-m', 'pip', 'install', '--user', '--upgrade', 'dcc-mcp-maya'))
     if ($r.ExitCode -eq 0) {
-        Add-Step 'pip install dcc-mcp-maya' 'OK' 'core + server + adapter' -Required
+        $after = Get-AdapterVersion
+        if (-not $DryRun -and $before -ne $after) {
+            Add-Step 'pip install dcc-mcp-maya' 'OK' ("{0} -> {1}" -f $(if ($before) { $before } else { 'none' }), $after) -Required
+            Add-Change ("dcc-mcp-maya {0} -> {1}" -f $(if ($before) { $before } else { 'none' }), $after) 'maya'
+        } else {
+            Add-Step 'pip install dcc-mcp-maya' 'OK' ("already {0}" -f $(if ($after) { $after } else { 'installed' })) -Required
+        }
     } else {
         Add-Step 'pip install dcc-mcp-maya' 'FAIL' $r.Output -Required
     }
@@ -248,6 +299,7 @@ if ($userScripts) {
             }
         }
         Add-Step 'user Scripts on PATH' 'OK' ("added {0} (this session and the user PATH)" -f $userScripts)
+        Add-Change ("user Scripts dir added to PATH: {0}" -f $userScripts) 'shell'
     }
 }
 
@@ -264,13 +316,25 @@ if ($SkipAdapter) {
         # Drops the Maya module (+ .mod) and a userSetup.py that starts the
         # embedded server whenever Maya opens. Idempotent.
         $file = if ($cli) { $cli.Source } else { 'dcc-mcp-maya' }
-        $r = Invoke-Tool $file @('install', '--yes')
+        # The CLI's plain output is "install: failed" and nothing else; --json
+        # carries the reason. Its preflight can fail on a machine where the
+        # module is already in place and working (seen on macOS: mayapy 3.13 +
+        # Maya 2027, `maya.cmds` has no `about` before maya.standalone is
+        # initialised) -- that is a warning with the reason, not a failed install.
+        $r = Invoke-Tool $file @('install', '--yes', '--json')
+        $reason = $r.Output
+        try { $j = $r.Output | ConvertFrom-Json; if ($j.failure_message) { $reason = ("{0}" -f $j.failure_message).Split("`n")[-1] } } catch { }
+        $modulesDir = Join-Path (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'maya') 'modules'
+        if ($env:MAYA_APP_DIR) { $modulesDir = Join-Path $env:MAYA_APP_DIR 'modules' }
+        $moduleInPlace = [bool]@(Get-ChildItem -LiteralPath $modulesDir -Filter 'dcc_mcp_maya*.mod' -ErrorAction SilentlyContinue).Count
         if ($r.ExitCode -eq 0) {
             Add-Step 'dcc-mcp-maya install' 'OK' 'Maya module + userSetup.py' -Required
             $s = Invoke-Tool $file @('status')
             Add-Step 'dcc-mcp-maya status' $(if ($s.ExitCode -eq 0) { 'OK' } else { 'WARN' }) $s.Output
+        } elseif ($moduleInPlace) {
+            Add-Step 'dcc-mcp-maya install' 'WARN' ("module already in place at {0}; the CLI's own preflight failed: {1}" -f $modulesDir, $reason)
         } else {
-            Add-Step 'dcc-mcp-maya install' 'FAIL' $r.Output -Required
+            Add-Step 'dcc-mcp-maya install' 'FAIL' $reason -Required
         }
     }
 }
@@ -288,6 +352,7 @@ if (-not (Test-Path -LiteralPath $skillScript)) {
             Add-Step 'install maya-autorig' 'OK' '(dry run)' -Required
         } else {
             $out = & $skillScript | Out-String
+            if ($out -match 'skill changed') { Add-Change 'skill copy for the gateway updated' 'maya' }
             $line = ($out -split "`n" | Where-Object { $_ -match '^installed:' } | Select-Object -First 1)
             Add-Step 'install maya-autorig' 'OK' $(if ($line) { $line.Trim() } else { 'copied' }) -Required
         }
@@ -298,43 +363,78 @@ if (-not (Test-Path -LiteralPath $skillScript)) {
 
 # --------------------------------------------------------------------------- #
 Write-Host ''
-Write-Host '5. Claude Code'
-if ($SkipClaude) {
-    Add-Step 'register MCP server' 'SKIP' '-SkipClaude'
-} else {
-    $claude = Get-Command 'claude' -ErrorAction SilentlyContinue
-    if (-not $claude -and -not $SkipPrereqs -and -not $DryRun) {
-        # Claude Code is an npm package, so Node comes first.
-        Write-Host '   Claude Code missing: installing Node.js and Claude Code' -ForegroundColor DarkGray
-        if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue) -and
-            -not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            [void](Install-WithWinget -Id 'OpenJS.NodeJS.LTS' -Label 'install Node.js')
-        }
-        $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-        if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+Write-Host '5. Agents: Claude Code and Codex'
+# Both CLIs are npm packages, so Node comes first. Returns the npm command
+# or $null; installing Node is skipped under -SkipPrereqs / -DryRun.
+function Get-Npm {
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+    if ($npm -or $SkipPrereqs -or $DryRun) { return $npm }
+    [void](Install-WithWinget -Id 'OpenJS.NodeJS.LTS' -Label 'install Node.js')
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+    return $npm
+}
+
+# Install an agent CLI when missing, then register the gateway with it.
+# $Register is the CLI's own "add MCP server" argument list; $ByHand is what
+# to print when the CLI is not there.
+function Register-Agent {
+    param([string] $Name, [string] $Package, [string[]] $Register, [string] $ByHand)
+    $cli = Get-Command $Name -ErrorAction SilentlyContinue
+    if (-not $cli -and -not $SkipPrereqs -and -not $DryRun) {
+        Write-Host ("   {0} missing: installing it with npm" -f $Name) -ForegroundColor DarkGray
+        $npm = Get-Npm
         if ($npm) {
-            $r = Invoke-Tool $npm.Source @('install', '-g', '@anthropic-ai/claude-code')
+            $r = Invoke-Tool $npm.Source @('install', '-g', $Package)
             Update-SessionPath
-            Add-Step 'install Claude Code' $(if ($r.ExitCode -eq 0) { 'OK' } else { 'WARN' }) `
-                $(if ($r.ExitCode -eq 0) { '@anthropic-ai/claude-code' } else { $r.Output })
-            $claude = Get-Command 'claude' -ErrorAction SilentlyContinue
+            Add-Step ("install {0}" -f $Name) $(if ($r.ExitCode -eq 0) { 'OK' } else { 'WARN' }) `
+                $(if ($r.ExitCode -eq 0) { $Package } else { $r.Output })
+            if ($r.ExitCode -eq 0) { Add-Change ("{0} CLI installed" -f $Name) ('login-' + $Name) }
+            $cli = Get-Command $Name -ErrorAction SilentlyContinue
         } else {
-            Add-Step 'install Claude Code' 'WARN' 'npm not on PATH after installing Node; reopen the shell and re-run'
+            Add-Step ("install {0}" -f $Name) 'WARN' 'npm not on PATH after installing Node; reopen the shell and re-run'
         }
     }
-    if (-not $claude) {
-        Add-Step 'register MCP server' 'WARN' ("claude CLI not found. Add by hand to ~\.claude.json: " +
-            '"maya": { "type": "http", "url": "' + $GatewayUrl + '" }')
+    if (-not $cli) {
+        Add-Step ("register MCP server ({0})" -f $Name) 'WARN' ("{0} CLI not found. {1}" -f $Name, $ByHand)
+        return
+    }
+    # Was it there before? That decides whether the agent needs a restart.
+    $had = (Invoke-Tool $cli.Source @('mcp', 'get', 'maya')).ExitCode -eq 0
+    $r = Invoke-Tool $cli.Source $Register
+    if ($r.ExitCode -eq 0) {
+        if ($had) {
+            Add-Step ("register MCP server ({0})" -f $Name) 'OK' 'already registered'
+        } else {
+            Add-Step ("register MCP server ({0})" -f $Name) 'OK' ("{0} (new)" -f $GatewayUrl)
+            Add-Change ("maya MCP server registered in {0}" -f $Name) ('restart-' + $Name)
+        }
     } else {
-        $r = Invoke-Tool $claude.Source @('mcp', 'add', '--transport', 'http', 'maya', $GatewayUrl)
-        if ($r.ExitCode -eq 0) {
-            Add-Step 'register MCP server' 'OK' $GatewayUrl
-        } else {
-            # Already registered is the common non-zero, and it is fine.
-            $status = if ($r.Output -match 'already') { 'OK' } else { 'WARN' }
-            Add-Step 'register MCP server' $status $r.Output
-        }
+        # Already registered is the common non-zero, and it is fine.
+        $status = if ($r.Output -match 'already') { 'OK' } else { 'WARN' }
+        Add-Step ("register MCP server ({0})" -f $Name) $status $r.Output
     }
+}
+
+if ($SkipClaude) {
+    Add-Step 'register MCP server (claude)' 'SKIP' '-SkipClaude'
+} else {
+    Register-Agent -Name 'claude' -Package '@anthropic-ai/claude-code' `
+        -Register @('mcp', 'add', '--transport', 'http', 'maya', $GatewayUrl) `
+        -ByHand ('Add by hand to ~\.claude.json: "maya": { "type": "http", "url": "' + $GatewayUrl + '" }')
+}
+if ($SkipCodex) {
+    Add-Step 'register MCP server (codex)' 'SKIP' '-SkipCodex'
+} else {
+    Register-Agent -Name 'codex' -Package '@openai/codex' `
+        -Register @('mcp', 'add', 'maya', '--url', $GatewayUrl) `
+        -ByHand ('Add by hand to ~\.codex\config.toml: [mcp_servers.maya]  url = "' + $GatewayUrl + '"')
+}
+# The agent-side SKILL.md goes wherever an agent now exists: install_skill.ps1
+# ran in step 4, possibly before the CLIs above were installed.
+if (-not $DryRun -and ((Get-Command codex -ErrorAction SilentlyContinue) -or (Get-Command claude -ErrorAction SilentlyContinue))) {
+    try { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $skillScript | Out-Null } catch { }
 }
 
 # --------------------------------------------------------------------------- #
@@ -410,13 +510,38 @@ if ($failed.Count -gt 0) {
     Write-Host ('{0} optional step(s) failed.' -f $failed.Count) -ForegroundColor Yellow
 }
 
-Write-Host 'Next:' -ForegroundColor Cyan
-Write-Host '  0. Install Maya and AdvancedSkeleton if the summary warned about them.'
-Write-Host '     Both are licensed products; everything else above is already installed.'
-Write-Host '  1. Open Maya. The adapter registers itself and the gateway sees it.'
-Write-Host '  2. In Claude Code:  load_skill(skill_name="maya-autorig")'
-Write-Host '  3. Rig a character: gauntlet_run(source="C:\path\to\character.fbx", pose="A")'
+# The part the person actually needs: what changed, and what each change
+# costs them. Nothing changed -> say so, and that nothing needs a restart.
+Write-Host 'What changed -> what to do' -ForegroundColor Cyan
+if ($DryRun) {
+    Write-Host '   (dry run: nothing was changed)'
+} elseif (@($script:Changes).Count -eq 0) {
+    Write-Host ("   nothing changed: everything was already installed at version {0}." -f $script:Version)
+    Write-Host '   -> nothing to restart. If Maya is closed, open it; then ask the agent to rig.'
+} else {
+    $why = @($script:Changes | ForEach-Object { $_.Why })
+    foreach ($c in $script:Changes) { Write-Host ("   - {0}" -f $c.What) }
+    $needMaya = $why -contains 'maya'
+    $loginCodex = $why -contains 'login-codex'; $loginClaude = $why -contains 'login-claude'
+    $needCodex = $loginCodex -or ($why -contains 'restart-codex')
+    $needClaude = $loginClaude -or ($why -contains 'restart-claude')
+    Write-Host ''
+    Write-Host '   To do, in this order:'
+    $n = 0
+    if ($loginCodex) { $n++; Write-Host ("   {0}. Codex was just installed: run 'codex login' once (it opens the browser)." -f $n) }
+    if ($loginClaude) { $n++; Write-Host ("   {0}. Claude Code was just installed: run 'claude' once and log in." -f $n) }
+    if ($needMaya) {
+        $n++
+        if (Test-MayaRunning) { Write-Host ("   {0}. Maya is open and is running the old copy: close it and open it again (one window)." -f $n) }
+        else { Write-Host ("   {0}. Open Maya (one window). It reads the new copy at start-up." -f $n) }
+    }
+    if ($needCodex -and -not $loginCodex) { $n++; Write-Host ("   {0}. Codex: start a new session (its MCP servers and skills are read at start-up). A session that is already open will not see 'maya'." -f $n) }
+    if ($needClaude -and -not $loginClaude) { $n++; Write-Host ("   {0}. Claude Code: type /mcp in the open session, or start a new one." -f $n) }
+    if (-not $needMaya) { $n++; Write-Host ("   {0}. Maya: nothing to do (leave it open if it is open)." -f $n) }
+}
 Write-Host ''
+Write-Host 'Then, in Codex or Claude Code:  load_skill(skill_name="maya-autorig")'
+Write-Host 'and rig a character:            gauntlet_run(source="C:\path\to\character.fbx", pose="A")'
 Write-Host 'If the MCP goes quiet with Maya open, the gateway lost its owner:'
 Write-Host '  check    curl http://127.0.0.1:9765/health   (000 = nobody listening)'
 Write-Host '  recover  tools\repair_gateway.ps1'

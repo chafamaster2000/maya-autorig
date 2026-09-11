@@ -3,7 +3,7 @@
 **[English](#english) · [Castellano](#castellano)**
 
 Marker-guided automatic rigging for Maya, on top of **AdvancedSkeleton**,
-driven from an agent through [DCC-MCP](https://github.com/dcc-mcp/dcc-mcp-maya).
+driven from an agent -- Codex or Claude Code -- through [DCC-MCP](https://github.com/dcc-mcp/dcc-mcp-maya).
 
 ```
 markers.propose  ->  fit_from_markers  ->  build_rig  ->  bind_skin
@@ -49,30 +49,39 @@ linear skinning, no dependency on a T-pose.
   *you* supply, row by row, with tolerances derived from that rig's own
   numbers. There is no invented threshold and no yardstick in this repo.
 
-### Install
+### Install -- paste the link to your agent
 
-**Windows** — double-click `install.bat`, or from a shell:
+Open **Codex** or **Claude Code** and paste:
 
-```
-install.bat -DryRun     rem see what it would do, change nothing
-install.bat             rem install
-```
+> Install https://github.com/chafamaster2000/maya-autorig and set it up for me.
 
-It installs Python and Node.js (winget), Claude Code (npm), the DCC-MCP
-packages, the Maya adapter, this skill and the Claude Code entry. It does
-**not** install Maya or AdvancedSkeleton: those are licensed products this
-script has no right to fetch, and it tells you where to get them.
+The agent reads [`AGENTS.md`](AGENTS.md) and runs one command, which
+installs everything installable and registers the `maya` MCP server in
+**both** Codex and Claude Code. Paste the same link again later and the same
+command **updates**: it compares the `VERSION` file in your clone with the
+one on GitHub, pulls only when they differ, and tells you exactly what to
+restart -- or that nothing needs a restart.
 
-**macOS / Linux**
+That command, if you would rather run it yourself:
 
-```bash
-python3 -m pip install --user dcc-mcp-maya
-dcc-mcp-maya install --yes
-tools/install_skill.sh
-```
+| | |
+|---|---|
+| Windows | `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/tools/bootstrap.ps1 \| iex"` |
+| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/install.sh \| bash` |
+| from a clone | `install.bat` (double-click) or `./install.sh`; `-DryRun` / `--dry-run` shows what it would do |
 
-Then open Maya and, from your agent, `load_skill("maya-autorig")`.
-Full chain and per-platform detail in [`docs/INSTALL.md`](docs/INSTALL.md).
+It installs Python and Node.js when missing, the DCC-MCP packages, the Maya
+adapter, this skill (the gateway copy and the agent-side `SKILL.md` in
+`~/.codex/skills` and `~/.claude/skills`), and the Codex and Claude Code
+CLIs with their `maya` entry. It does **not** install Maya or
+AdvancedSkeleton: those are licensed products this script has no right to
+fetch, and it tells you where to get them. Each agent CLI needs its own
+login once.
+
+It ends with **"What changed -> what to do"**: the restarts you owe (Maya if
+the skill copy changed and it was open; a new Codex session if the server
+was just added; `/mcp` in Claude Code), and nothing else. Full chain and
+per-platform detail in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ### Use
 
@@ -108,7 +117,9 @@ somewhere Maya never looks. `MAYA_AUTORIG_EVIDENCE` overrides it.
 
 ```
 skill/maya-autorig/     the skill: tools.yaml + scripts/ (the whole pipeline)
-tools/                  installers and operator helpers
+tools/                  installers, the portable reviewer (review_run.py) and operator helpers
+AGENTS.md               what an agent (Codex, Claude Code) must do with this repo; CLAUDE.md imports it
+VERSION                 the one version number every installed copy carries
 docs/INSTALL.md         the MCP chain, end to end, per platform
 ```
 
@@ -162,30 +173,38 @@ Standard de Unity, skinning lineal, y sin depender de una T-pose.
   sacadas de los números de ese mismo rig. No hay umbrales inventados, y este
   repo no trae ninguna referencia adentro.
 
-### Instalación
+### Instalación -- pegale el link a tu agente
 
-**Windows** — doble clic en `install.bat`, o desde una terminal:
+Abrí **Codex** o **Claude Code** y pegale:
 
-```
-install.bat -DryRun     rem muestra qué haría, sin tocar nada
-install.bat             rem instala
-```
+> Instalá https://github.com/chafamaster2000/maya-autorig y dejámelo configurado.
 
-Instala Python y Node.js (winget), Claude Code (npm), los paquetes DCC-MCP, el
-adapter de Maya, esta herramienta y la entrada en Claude Code. **No** instala
-Maya ni AdvancedSkeleton: son productos con licencia que el script no tiene
-derecho a bajar, y te dice de dónde sacarlos.
+El agente lee [`AGENTS.md`](AGENTS.md) y corre un solo comando, que instala
+todo lo instalable y registra el servidor MCP `maya` en **los dos**, Codex y
+Claude Code. Si más adelante volvés a pegar el mismo link, ese mismo comando
+**actualiza**: compara el archivo `VERSION` de tu copia con el de GitHub,
+baja los cambios sólo si son distintos, y te dice exactamente qué reiniciar
+-- o que no hace falta reiniciar nada.
 
-**macOS / Linux**
+El comando, si preferís correrlo vos:
 
-```bash
-python3 -m pip install --user dcc-mcp-maya
-dcc-mcp-maya install --yes
-tools/install_skill.sh
-```
+| | |
+|---|---|
+| Windows | `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/tools/bootstrap.ps1 \| iex"` |
+| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/install.sh \| bash` |
+| desde un clon | `install.bat` (doble clic) o `./install.sh`; `-DryRun` / `--dry-run` muestra qué haría |
 
-Después abrí Maya y, desde tu agente, `load_skill("maya-autorig")`.
-La cadena completa está en [`docs/INSTALL.md`](docs/INSTALL.md).
+Instala Python y Node.js si faltan, los paquetes DCC-MCP, el adapter de Maya,
+esta herramienta (la copia para el gateway y el `SKILL.md` para el agente en
+`~/.codex/skills` y `~/.claude/skills`), y los CLI de Codex y Claude Code con
+su entrada `maya`. **No** instala Maya ni AdvancedSkeleton: son productos con
+licencia que el script no tiene derecho a bajar, y te dice de dónde sacarlos.
+Cada agente pide su login una vez.
+
+Termina con **"What changed -> what to do"**: los reinicios que debés (Maya
+si cambió la copia de la skill y estaba abierta; una sesión nueva de Codex si
+recién se agregó el servidor; `/mcp` en Claude Code), y nada más. La cadena
+completa está en [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ### Uso
 

@@ -3,7 +3,8 @@ rem maya-autorig - Windows installer.
 rem Double-click this file, or run it from a shell:
 rem     install.bat              install everything installable
 rem     install.bat -DryRun      show what it would do, change nothing
-rem     install.bat -SkipPrereqs do not install Python / Node / Claude Code
+rem     install.bat -SkipPrereqs do not install Python / Node / Claude Code / Codex
+rem     install.bat -SkipCodex   configure Claude Code only (-SkipClaude: Codex only)
 rem
 rem It only wraps tools\install_windows.ps1 with an execution policy that lets
 rem it run: a freshly downloaded .ps1 is blocked by default on Windows, which

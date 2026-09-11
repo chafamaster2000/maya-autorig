@@ -11,7 +11,7 @@ compatibility: "Python 3.9+; Maya 2024-2027 (numpy inside Maya); AdvancedSkeleto
 metadata:
   dcc-mcp:
     dcc: maya
-    version: "0.2.0"
+    version: "0.3.0"
     layer: domain
     tags: ["maya", "rigging", "skinning", "advancedskeleton", "autorig", "mixamo", "markers"]
     search-hint: "auto rig, autorig, mixamo markers, fit skeleton, build rig, bind skin, deformation test"
@@ -19,6 +19,27 @@ metadata:
 ---
 
 # Maya Auto-Rig (marker-guided)
+
+## Getting the tools (any agent)
+
+The pipeline runs **inside Maya** behind the DCC-MCP gateway. Whatever agent
+you are -- Claude Code, Codex, anything that speaks MCP -- the server named
+`maya` (`http://127.0.0.1:9765/mcp`) exposes four verbs: `search`,
+`describe`, `load_skill`, `call`. Clients prefix them differently (Claude Code
+shows `mcp__maya__call`); the verbs are the same.
+
+1. `resources/read gateway://instances` -> the live Maya's `instance_id`
+   (a unique prefix is enough). Maya must be open; one window, not two.
+2. `load_skill(skill_name="maya-autorig", instance_id=<id>)` registers the
+   `maya_autorig__*` tools on that Maya. It does **not** return this text:
+   the gateway hands over tools, never instructions. This file reaches you
+   as a skill in your own skills directory (`tools/install_skill.sh` puts it
+   in `~/.codex/skills` and `~/.claude/skills`), or read it from the repo:
+   `skill/maya-autorig/SKILL.md`.
+3. Invoke a tool as `call(tool_slug="maya.<id>.maya_autorig__<tool>",
+   arguments={...})`. The names below (`markers_propose`, `harness_run`,
+   `gauntlet_run`...) are the `<tool>` part. `describe(tool_slug)` gives the
+   schema; results are slim by default (see *Cost discipline*).
 
 ## Order of use
 
@@ -36,11 +57,12 @@ metadata:
    previous checkpoint is the recovery point.
 4. `harness_run` returns a `review` block. If `skip_review` is true, the
    content (fit positions, bind settings) is unchanged since the last PASS:
-   **do not review again**. Otherwise make **ONE** reviewer-subagent call
-   (**sonnet**) with the `manifest` path — every render of the run with its
-   stage `expectation`, judged in one pass — then `review_mark(evidence_dir,
+   **do not review again**. Otherwise make **ONE** fresh-context review of
+   the `manifest` path — every render of the run with its stage
+   `expectation`, judged in one pass — then `review_mark(evidence_dir,
    verdict)` so the next unchanged run skips it. Never load the images into
-   the main context.
+   the main context; how to make that one call is under **Reviewer and
+   critic** below.
 
 Individual tools (`fit_from_markers`, `verify_fit`, `build_rig`, `bind_skin`,
 `verify_skin`, `checkpoint`) exist for re-running one stage.
@@ -64,8 +86,8 @@ still rigs and profiles, it just does not grade.
    69/70), `wins`, the `failed` rows with bar vs ours, `grid_md` and
    `critic_manifest`. Omit `source` to gauntlet the mesh already open;
    omit `bar` to rig without grading.
-2. Make **ONE** fresh-context critic call (**sonnet**) with the
-   `critic_manifest` path only; it must not open `critic_key.json`. It
+2. Make **ONE** fresh-context critic call with the `critic_manifest` path
+   only; it must not open `critic_key.json` (see **Reviewer and critic**). It
    sees anonymised A/B pairs of the same pose on both rigs and does not
    know which is which. Feed its `{id: A|B|tie}` to
    `critic_verdicts(ours_dir, picks)`, then `rig_compare(bar_path,
@@ -81,6 +103,31 @@ control rig, the skin (influences per vertex, weight locality, L/R
 symmetry, smoothness) and the deformation (FK bends, wrist twist, and
 seven poses including a fist that exercises the fingers). Target engine
 defaults to 4 bones per vertex, which is Unity's Standard quality.
+
+## Reviewer and critic: one fresh context, whichever agent you are
+
+The renders are the only thing a script cannot judge, so a **separate
+context** judges them: it sees the manifest (and its images) and nothing
+else -- not this conversation, and for the critic never `critic_key.json`.
+The manifest carries its own `instructions`; the prompt is just "read this
+manifest and follow its instructions". Three ways to make that one call:
+
+- **Claude Code:** one Agent-tool subagent, model **sonnet** (the studio's
+  standing choice), given the manifest path. It answers `OVERALL: PASS|FAIL`
+  (review) or `{id: A|B|tie}` (critic); you then call `review_mark` /
+  `critic_verdicts` with that.
+- **Codex:** `spawn_agent` with `fork_turns="none"` (fresh history, no
+  inherited turns), same prompt, same write-back. The spawned agent reads
+  the images with its own image viewer; the parent never does.
+- **Any agent, from the shell:** `python3 tools/review_run.py <manifest>`
+  runs the review through `codex exec` or `claude -p` (whichever is
+  installed; `--client` picks), attaches the images itself, parses the
+  verdict and writes it back (`review_mark` for a run, `critic_verdicts`
+  for the gauntlet), so the calling agent never touches a pixel. Pure
+  Python, no Maya: it only needs the evidence directory.
+
+Which one is a cost question, not a correctness one; the rule that matters
+is *one* call per run and *none* when `skip_review` is true.
 
 ## Evidence pictures
 
@@ -102,8 +149,8 @@ the cost. Three rules keep a run cheap:
   dict (positions, ray votes, weight locality...) is in
   `<evidence_dir>/<stage>.json` — read it only when something failed. Pass
   `compact=false` only for debugging.
-- **One visual review per run, sonnet, and none when nothing changed**
-  (`review_manifest` / `review_mark`). Renders are 490×630: half the pixels
+- **One visual review per run, in a fresh context, and none when nothing
+  changed** (`review_manifest` / `review_mark`). Renders are 490×630: half the pixels
   of the original, joint dots still legible.
 - **`attach_project` once per session**; repeat only if the package prefixes
   change.
