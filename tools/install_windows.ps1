@@ -267,23 +267,59 @@ if ($SkipClaude) {
 
 # --------------------------------------------------------------------------- #
 Write-Host ''
-Write-Host '6. Offline smoke test'
+Write-Host '6. Verify'
 if (-not $py) {
-    Add-Step 'offline tests' 'SKIP' 'no Python'
+    Add-Step 'verify' 'SKIP' 'no Python'
 } elseif ($DryRun) {
-    Add-Step 'offline tests' 'SKIP' 'dry run'
+    Add-Step 'verify' 'SKIP' 'dry run'
 } else {
-    Push-Location $script:RepoRoot
-    try {
-        # These need numpy only; they prove the tool catalog and the pure
-        # geometry are intact on this machine, without opening Maya.
-        $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
-        $r = Invoke-Tool $py.File (@($py.Prefix) + @('-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'))
-        $tail = ($r.Output -split "`n" | Select-Object -Last 3) -join ' '
-        if ($r.ExitCode -eq 0) { Add-Step 'offline tests' 'OK' $tail }
-        else { Add-Step 'offline tests' 'WARN' $tail }
-    } finally {
-        Pop-Location
+    # The server runs a STRICT scan of the user skills directory at startup:
+    # one invalid skill there and Maya's adapter raises on boot. Catching that
+    # here, before Maya ever opens, is the check that matters.
+    $probe = @'
+import json, sys
+try:
+    from dcc_mcp_core._core import scan_and_load_strict as scan
+except Exception as exc:
+    print(json.dumps({"ok": None, "why": "dcc_mcp_core not importable from this Python: %s" % exc}))
+    sys.exit(0)
+try:
+    found = scan(extra_paths=[sys.argv[1]], dcc_name="maya")
+    print(json.dumps({"ok": True, "found": str(found)[:200]}))
+except Exception as exc:
+    print(json.dumps({"ok": False, "why": "%s: %s" % (type(exc).__name__, exc)}))
+'@
+    $probeFile = Join-Path ([IO.Path]::GetTempPath()) 'maya_autorig_scan_probe.py'
+    Set-Content -LiteralPath $probeFile -Value $probe -Encoding UTF8
+    $skillsDir = Split-Path -Parent (Join-Path (Join-Path (Join-Path (Get-HomeDirectory) '.dcc-mcp') 'maya') 'skills\maya-autorig')
+    $r = Invoke-Tool $py.File (@($py.Prefix) + @($probeFile, $skillsDir))
+    Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
+    try { $verdict = $r.Output | ConvertFrom-Json } catch { $verdict = $null }
+    if ($verdict -and $verdict.ok -eq $true) {
+        Add-Step 'skill scans clean' 'OK' $verdict.found -Required
+    } elseif ($verdict -and $null -eq $verdict.ok) {
+        Add-Step 'skill scans clean' 'SKIP' $verdict.why
+    } else {
+        $why = if ($verdict) { $verdict.why } else { $r.Output }
+        Add-Step 'skill scans clean' 'FAIL' $why -Required
+    }
+
+    $cliV = Get-Command 'dcc-mcp-maya' -ErrorAction SilentlyContinue
+    if ($cliV -and -not $SkipAdapter) {
+        $v = Invoke-Tool $cliV.Source @('verify')
+        Add-Step 'dcc-mcp-maya verify' $(if ($v.ExitCode -eq 0) { 'OK' } else { 'WARN' }) $v.Output
+    }
+
+    # The development tree ships offline tests; a released copy does not.
+    $testsDir = Join-Path $script:RepoRoot 'tests'
+    if (Test-Path -LiteralPath $testsDir) {
+        Push-Location $script:RepoRoot
+        try {
+            $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+            $r = Invoke-Tool $py.File (@($py.Prefix) + @('-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'))
+            $tail = ($r.Output -split "`n" | Select-Object -Last 3) -join ' '
+            Add-Step 'offline tests' $(if ($r.ExitCode -eq 0) { 'OK' } else { 'WARN' }) $tail
+        } finally { Pop-Location }
     }
 }
 

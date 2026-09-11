@@ -65,6 +65,13 @@ tools/install_skill.sh
 
 Then open Maya and, from your agent, `load_skill("maya-autorig")`.
 
+The installer brings the whole MCP chain: `dcc-mcp-core`, `dcc-mcp-server`
+(the gateway), `dcc-mcp-maya` (the Maya adapter and its `userSetup.py`), this
+skill, and the Claude Code entry. It does **not** install Maya, Python, or
+AdvancedSkeleton, and it does not start a gateway by hand: the sidecar inside
+Maya launches one when Maya opens. See
+[`docs/INSTALL.md`](docs/INSTALL.md) for the full table.
+
 ## Use
 
 ```

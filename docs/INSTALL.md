@@ -176,6 +176,38 @@ Flags: `-DryRun`, `-SkipPackages`, `-SkipAdapter`, `-SkipClaude`,
 `-GatewayUrl`, `-Python`. Sale con código 1 si falló un paso requerido, así
 sirve de gate en el setup de una máquina.
 
+### What the installer does and does not install
+
+Installs, on a machine that already has Maya and Python:
+
+| | |
+|---|---|
+| `dcc-mcp-core` | the skill runtime (catalog, contract) |
+| `dcc-mcp-server` | the gateway binary and the per-DCC sidecar |
+| `dcc-mcp-maya` | the Maya adapter: a Maya module plus the `userSetup.py` that starts the embedded MCP server every time Maya opens |
+| the per-user `Scripts` directory on `PATH` | Windows leaves it off, which makes the adapter CLI "not found" for no reason |
+| `maya-autorig` | this skill, copied into the dcc-mcp user skills directory |
+| the Claude Code entry | `claude mcp add --transport http maya http://127.0.0.1:9765/mcp` |
+
+The first three come from a single `pip install dcc-mcp-maya`, which pulls
+the other two. numpy is not installed: the skill runs inside Maya, which
+ships its own.
+
+**Does not install, and tells you so:**
+
+- **Maya.** Checked under `Program Files\Autodesk`; a warning, not a failure,
+  since the files can be laid down before Maya exists.
+- **AdvancedSkeleton.** It is commercial content from Animation Studios, not a
+  package. The installer looks for it and points at where to put it. Nothing
+  can be rigged without it.
+- **Python.** Required, checked, and the run fails without it.
+- **Claude Code itself.** If the `claude` CLI is absent the installer prints
+  the JSON to paste into `~/.claude.json` instead.
+
+**Nothing starts a gateway.** That is on purpose: the sidecar inside Maya
+launches one when Maya opens, and a hand-started gateway competes with it.
+Open Maya, and the chain comes up.
+
 ### Cuando el MCP se calla con Maya abierta
 
 Síntoma: Maya corriendo, plugin cargado, y toda llamada MCP falla con
