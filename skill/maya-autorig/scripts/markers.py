@@ -372,6 +372,12 @@ def exit_mode(mesh: str = "Mesh", **_kw) -> Dict[str, Any]:
     return out
 
 
+def reframe(mesh: str = "Mesh") -> Optional[str]:
+    """Camera back on the whole character, through the visible panel."""
+    panel = ac.visible_model_panel()
+    return _frame_front(mesh, panel) if panel and cmds.objExists(mesh) else None
+
+
 def mode(action: str = "exit", mesh: str = "Mesh", **_kw) -> Dict[str, Any]:
     """Tool entry: enter or leave marker mode by hand (e.g. after a failed
     harness you gave up on, or to re-drag after a fit)."""

@@ -99,6 +99,11 @@ def run(mesh: str = "Mesh", template: str = "bipedBendy.ma", fingers: Any = "aut
         out["passed"] = all(e["passed"] for e in ledger)
     except _Stop:
         pass
+    if "marker_mode" in out:
+        # The pose gallery ran after the mode was left and its last frame is
+        # the fist's hand close-up: put the camera back on the character now,
+        # at the very end, whatever the gallery did with it.
+        out["marker_mode"]["camera"] = markers.reframe(mesh)
     out["summary"] = ev.summary_path
     out["scene"] = cmds.file(query=True, sceneName=True)
     # One review per run: everything the reviewer needs in one manifest, and
