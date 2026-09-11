@@ -32,12 +32,12 @@ reinstall=0; pass=()
 for a in "$@"; do case "$a" in --reinstall) reinstall=1;; *) pass+=("$a");; esac; done
 remote_version="$(curl -fsSL "https://raw.githubusercontent.com/chafamaster2000/maya-autorig/main/VERSION" 2>/dev/null | tr -d '[:space:]')"
 if [ -d "$dest/.git" ]; then
-  local_version="$(tr -d '[:space:]' < "$dest/VERSION" 2>/dev/null || echo unknown)"
+  local_version="$({ cat "$dest/VERSION" 2>/dev/null || echo unknown; } | tr -d '[:space:]')"
   echo "installed: $local_version   available: ${remote_version:-unknown (offline?)}"
   if [ -n "$remote_version" ] && [ "$local_version" = "$remote_version" ] && [ "$reinstall" = 0 ]; then
     # Same version: only re-run the installer if something is missing.
     healthy=1
-    [ "$(tr -d '[:space:]' < "$HOME/.dcc-mcp/maya/skills/maya-autorig/VERSION" 2>/dev/null)" = "$local_version" ] || healthy=0
+    [ "$(cat "$HOME/.dcc-mcp/maya/skills/maya-autorig/VERSION" 2>/dev/null | tr -d '[:space:]')" = "$local_version" ] || healthy=0
     command -v codex  >/dev/null 2>&1 && ! codex  mcp get maya >/dev/null 2>&1 && healthy=0
     command -v claude >/dev/null 2>&1 && ! claude mcp get maya >/dev/null 2>&1 && healthy=0
     if [ "$healthy" = 1 ]; then
@@ -50,11 +50,11 @@ if [ -d "$dest/.git" ]; then
     before="$(git -C "$dest" rev-parse --short HEAD)"
     git -C "$dest" fetch --quiet origin && git -C "$dest" pull --ff-only --quiet
     after="$(git -C "$dest" rev-parse --short HEAD)"
-    new_version="$(tr -d '[:space:]' < "$dest/VERSION" 2>/dev/null || echo unknown)"
+    new_version="$({ cat "$dest/VERSION" 2>/dev/null || echo unknown; } | tr -d '[:space:]')"
     if [ "$before" = "$after" ]; then echo "clone already at $after ($new_version)"; else echo "updated: $local_version ($before) -> $new_version ($after)"; fi
   fi
 else
   echo "cloning $REPO_URL into $dest"; git clone --depth 1 "$REPO_URL" "$dest"
-  echo "version: $(tr -d '[:space:]' < "$dest/VERSION" 2>/dev/null || echo unknown)"
+  echo "version: $({ cat "$dest/VERSION" 2>/dev/null || echo unknown; } | tr -d '[:space:]')"
 fi
 exec bash "$dest/tools/install_unix.sh" "${pass[@]}"
