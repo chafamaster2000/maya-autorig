@@ -93,7 +93,7 @@ def run(mesh: str = "Mesh", template: str = "bipedBendy.ma", fingers: Any = "aut
         # in weights or heuristics, never by re-dragging markers -- so it does
         # not keep the mode. A failed stage above does: the markers stay at
         # hand for a re-drag and a re-run from `fit`.
-        out["marker_mode"] = markers.exit_mode()
+        out["marker_mode"] = markers.exit_mode(mesh)
         if gallery:
             stage("pose_gallery", pose_gallery.main, mesh=mesh, evidence_dir=evidence_dir, compact=False)
         out["passed"] = all(e["passed"] for e in ledger)

@@ -345,9 +345,11 @@ def enter_mode(mesh: str = "Mesh") -> Dict[str, Any]:
     return out
 
 
-def exit_mode(**_kw) -> Dict[str, Any]:
+def exit_mode(mesh: str = "Mesh", **_kw) -> Dict[str, Any]:
     """Back to a scene you can pose: layer gone (mesh selectable again), X-ray
-    as it was, mirror jobs killed, markers hidden, nothing selected."""
+    as it was, mirror jobs killed, markers hidden, nothing selected, and the
+    camera back on the whole character -- the pose gallery's last frame is a
+    hand close-up, which is what the person was otherwise left looking at."""
     out: Dict[str, Any] = {"mode": False}
     out["jobs_killed"] = _kill_jobs()
     if cmds.objExists(LAYER):
@@ -363,6 +365,8 @@ def exit_mode(**_kw) -> Dict[str, Any]:
                 out["xray"] = {"panel": panel, "now": prev}
             except Exception as exc:  # noqa: BLE001
                 out["xray"] = {"panel": panel, "error": str(exc)}
+            if cmds.objExists(mesh):
+                out["camera"] = _frame_front(mesh, panel)
         out["markers"] = set_visible(False)
     cmds.select(clear=True)
     return out
@@ -375,7 +379,7 @@ def mode(action: str = "exit", mesh: str = "Mesh", **_kw) -> Dict[str, Any]:
         if cmds.objExists(GROUP):
             set_visible(True)
         return enter_mode(mesh)
-    return exit_mode()
+    return exit_mode(mesh)
 
 
 REFINED_ATTR = "autorigRefined"
