@@ -43,6 +43,8 @@ linear skinning, no dependency on a T-pose.
   *you* supply, row by row, with tolerances derived from that rig's own
   numbers. There is no invented threshold and no yardstick in this repo.
 
+> **En castellano y paso a paso: [`GUIA.md`](GUIA.md).**
+
 ## Install
 
 Full chain (packages, Maya adapter, skill, Claude Code) in

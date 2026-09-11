@@ -22,6 +22,10 @@
 .PARAMETER DryRun
     Report every step and change nothing.
 
+.PARAMETER SkipPrereqs
+    Do not install Python, Node.js or Claude Code even when they are missing
+    (they are installed through winget by default).
+
 .PARAMETER SkipPackages
     Do not touch pip (the DCC-MCP packages are already installed).
 
@@ -46,6 +50,7 @@
 [CmdletBinding()]
 param(
     [switch] $DryRun,
+    [switch] $SkipPrereqs,
     [switch] $SkipPackages,
     [switch] $SkipAdapter,
     [switch] $SkipClaude,
@@ -100,6 +105,38 @@ function Resolve-Python {
     return $null
 }
 
+function Update-SessionPath {
+    <# winget writes the new PATH to the registry; a process that is already
+       running keeps the PATH it started with, so anything just installed is
+       invisible until the shell is reopened. Re-read both scopes instead. #>
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+}
+
+function Install-WithWinget {
+    <# Install a package by winget id. Returns $true when winget reports
+       success or already-installed. #>
+    param([string] $Id, [string] $Label)
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        Add-Step $Label 'FAIL' ('winget is not available on this machine (Windows 10 1709+ / App Installer). ' +
+            'Install {0} by hand and re-run.' -f $Id) -Required
+        return $false
+    }
+    $r = Invoke-Tool $winget.Source @('install', '--id', $Id, '--exact', '--source', 'winget',
+        '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+    # winget exits non-zero for "already installed"; that is a success here.
+    $already = $r.Output -match 'already installed|No available upgrade'
+    if ($r.ExitCode -eq 0 -or $already) {
+        Update-SessionPath
+        Add-Step $Label 'OK' $(if ($already) { 'already installed' } else { $Id }) -Required
+        return $true
+    }
+    Add-Step $Label 'FAIL' $r.Output -Required
+    return $false
+}
+
 Write-Host ''
 Write-Host 'maya-autorig - Windows setup' -ForegroundColor Cyan
 Write-Host ('repo: {0}' -f $script:RepoRoot)
@@ -110,12 +147,25 @@ Write-Host ''
 Write-Host '1. Preflight'
 Add-Step 'PowerShell 5.1+' 'OK' ("version {0}" -f $PSVersionTable.PSVersion) -Required
 
+# Anything that can be installed from a package source, is. What is left out
+# is left out for a reason, not for lack of trying: Maya and AdvancedSkeleton
+# are licensed products this script has no right to fetch.
 $py = Resolve-Python
+if (-not $py -and -not $SkipPrereqs -and -not $DryRun) {
+    Write-Host '   Python missing: installing it' -ForegroundColor DarkGray
+    if (Install-WithWinget -Id 'Python.Python.3.12' -Label 'install Python') {
+        $py = Resolve-Python
+    }
+} elseif (-not $py -and $DryRun) {
+    Add-Step 'install Python' 'SKIP' 'dry run: would winget install Python.Python.3.12'
+}
 if ($py) {
     $v = Invoke-Tool $py.File (@($py.Prefix) + @('--version'))
     Add-Step 'Python' 'OK' ("{0} {1} -> {2}" -f $py.File, ($py.Prefix -join ' '), $v.Output) -Required
+} elseif ($SkipPrereqs) {
+    Add-Step 'Python' 'FAIL' 'no Python and -SkipPrereqs was passed' -Required
 } else {
-    Add-Step 'Python' 'FAIL' 'no py.exe or python.exe on PATH; install Python 3.9+ and re-run' -Required
+    Add-Step 'Python' 'FAIL' 'Python is still not on PATH after the install; reopen the shell and re-run' -Required
 }
 
 # Maya: needed to run anything, but not to lay the files down.
@@ -150,8 +200,11 @@ $asRoots = @($asRoots | Sort-Object -Unique)
 if ($asRoots.Count -gt 0) {
     Add-Step 'AdvancedSkeleton' 'OK' ($asRoots -join '; ')
 } else {
-    Add-Step 'AdvancedSkeleton' 'WARN' ("not found. Install AdvancedSkeleton 6.x into '{0}\scripts', " -f $docsMaya +
-        'or set ADVANCEDSKELETON_DIR to the folder holding AdvancedSkeleton.mel. The rig cannot be built without it.')
+    Add-Step 'AdvancedSkeleton' 'WARN' ("not found. It is licensed content from Animation Studios, " +
+        "not a package, so this installer will not fetch it: get it from " +
+        "https://www.animationstudios.com.au/advanced-skeleton and run its setup into " +
+        ("'{0}\scripts', " -f $docsMaya) +
+        'or set ADVANCEDSKELETON_DIR to the folder holding AdvancedSkeleton.mel. No rig can be built without it.')
 }
 
 # --------------------------------------------------------------------------- #
@@ -250,6 +303,25 @@ if ($SkipClaude) {
     Add-Step 'register MCP server' 'SKIP' '-SkipClaude'
 } else {
     $claude = Get-Command 'claude' -ErrorAction SilentlyContinue
+    if (-not $claude -and -not $SkipPrereqs -and -not $DryRun) {
+        # Claude Code is an npm package, so Node comes first.
+        Write-Host '   Claude Code missing: installing Node.js and Claude Code' -ForegroundColor DarkGray
+        if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue) -and
+            -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            [void](Install-WithWinget -Id 'OpenJS.NodeJS.LTS' -Label 'install Node.js')
+        }
+        $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+        if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+        if ($npm) {
+            $r = Invoke-Tool $npm.Source @('install', '-g', '@anthropic-ai/claude-code')
+            Update-SessionPath
+            Add-Step 'install Claude Code' $(if ($r.ExitCode -eq 0) { 'OK' } else { 'WARN' }) `
+                $(if ($r.ExitCode -eq 0) { '@anthropic-ai/claude-code' } else { $r.Output })
+            $claude = Get-Command 'claude' -ErrorAction SilentlyContinue
+        } else {
+            Add-Step 'install Claude Code' 'WARN' 'npm not on PATH after installing Node; reopen the shell and re-run'
+        }
+    }
     if (-not $claude) {
         Add-Step 'register MCP server' 'WARN' ("claude CLI not found. Add by hand to ~\.claude.json: " +
             '"maya": { "type": "http", "url": "' + $GatewayUrl + '" }')
@@ -339,6 +411,8 @@ if ($failed.Count -gt 0) {
 }
 
 Write-Host 'Next:' -ForegroundColor Cyan
+Write-Host '  0. Install Maya and AdvancedSkeleton if the summary warned about them.'
+Write-Host '     Both are licensed products; everything else above is already installed.'
 Write-Host '  1. Open Maya. The adapter registers itself and the gateway sees it.'
 Write-Host '  2. In Claude Code:  load_skill(skill_name="maya-autorig")'
 Write-Host '  3. Rig a character: gauntlet_run(source="C:\path\to\character.fbx", pose="A")'
