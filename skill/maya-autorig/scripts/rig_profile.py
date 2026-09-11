@@ -390,7 +390,7 @@ def main(mesh: Optional[str] = None, evidence_dir: Optional[str] = None, label: 
     scene = cmds.file(query=True, sceneName=True)
     label = label or os.path.splitext(os.path.basename(scene))[0] or "untitled"
     if evidence_dir is None:
-        evidence_dir = os.path.join(ac.EVIDENCE_ROOT, "profiles", label)
+        evidence_dir = os.path.join(ac.evidence_root(), "profiles", label)
     os.makedirs(evidence_dir, exist_ok=True)
     pose_reset = ac.go_to_build_pose()
 

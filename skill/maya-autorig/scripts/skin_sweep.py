@@ -50,7 +50,7 @@ def run(scene: str, mesh: str = "Mesh", bar: str = "", variants: Sequence[str] =
     with open(bar_path) as fh:
         bar_prof = json.load(fh)
     chosen = [v for v in VARIANTS if not variants or any(v["name"].startswith(o) for o in variants)]
-    out_dir = os.path.join(ac.EVIDENCE_ROOT, "skin_sweep", os.path.splitext(os.path.basename(scene))[0])
+    out_dir = os.path.join(ac.evidence_root(), "skin_sweep", os.path.splitext(os.path.basename(scene))[0])
     os.makedirs(out_dir, exist_ok=True)
     keep_voxel, keep_falloff = bind_skin.GEODESIC_VOXEL, bind_skin.GEODESIC_FALLOFF
     results = []

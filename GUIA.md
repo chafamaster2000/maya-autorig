@@ -75,7 +75,11 @@ por la pose.
 
 ## Dónde quedan las pruebas de que salió bien
 
-En `Documentos\maya\projects\default\autorig_evidence\<personaje>\<fecha>\`.
+Adentro del proyecto que Maya tenga abierto, en
+`autorig_evidence\<personaje>\<fecha>\`. Si no tocaste nada, eso es
+`Documentos\maya\projects\default\autorig_evidence\`. La herramienta le
+pregunta a Maya dónde está el proyecto, así que si tenés Documentos en OneDrive
+o cambiaste de proyecto, las evidencias van igual donde corresponde.
 
 Cada etapa deja un JSON con lo que midió y una captura del viewport en rayos X,
 donde se ven los huesos y los controles a través del cuerpo. Si algo falló, la

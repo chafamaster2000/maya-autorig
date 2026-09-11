@@ -40,12 +40,37 @@ def as_mel_path() -> str:
     raise RuntimeError("no AdvancedSkeleton.mel in {}".format(base))
 
 
-# Maya's default project is ~/Documents/maya/projects/default on Windows and
-# macOS alike, so this path is already portable. NOT MAYA_APP_DIR: that is the
-# preferences directory (~/Library/Preferences/Autodesk/maya on macOS), and
-# using it moved every run's evidence out from under the bar's renders.
-EVIDENCE_ROOT = (os.environ.get("MAYA_AUTORIG_EVIDENCE")
-                 or os.path.expanduser("~/Documents/maya/projects/default/autorig_evidence"))
+def evidence_root() -> str:
+    """Where a run writes its evidence: `autorig_evidence` inside Maya's
+    current project, asked of Maya instead of guessed.
+
+    Guessing is what breaks on Windows. `~/Documents` is wrong the moment
+    Documents is redirected -- OneDrive moves it under
+    C:\\Users\\<user>\\OneDrive\\Documents, a roaming profile puts it on a
+    server, and a localised shell folder can rename it -- and Maya is then
+    writing its project somewhere this path never looks. Maya knows where its
+    project is, so ask it. On a default install the answer is the same
+    ~/Documents/maya/projects/default as before.
+
+    MAYA_AUTORIG_EVIDENCE overrides everything, for a studio that keeps
+    evidence off the artist's drive. NOT MAYA_APP_DIR: that is the
+    preferences directory, not the projects one.
+    """
+    override = os.environ.get("MAYA_AUTORIG_EVIDENCE")
+    if override:
+        return override
+    try:
+        root = cmds.workspace(query=True, rootDirectory=True)
+    except Exception:  # noqa: BLE001 - no Maya (offline import): fall through
+        root = ""
+    if root:
+        return os.path.join(root, "autorig_evidence")
+    return os.path.expanduser("~/Documents/maya/projects/default/autorig_evidence")
+
+
+# Back-compat for callers that read the module attribute. Prefer the function:
+# a session that changes project mid-run gets the right answer from it.
+EVIDENCE_ROOT = evidence_root()
 
 MARKER_GROUP = "AutoRigMarkers"
 TMP_PREFIX = "autorigTmp_"
@@ -351,7 +376,7 @@ class Evidence:
         if run_dir is None:
             scene = cmds.file(query=True, sceneName=True, shortName=True) or "untitled"
             tag = scene_tag or os.path.splitext(scene)[0]
-            run_dir = os.path.join(EVIDENCE_ROOT, tag, time.strftime("%Y%m%d-%H%M%S"))
+            run_dir = os.path.join(evidence_root(), tag, time.strftime("%Y%m%d-%H%M%S"))
         os.makedirs(run_dir, exist_ok=True)
         self.dir = run_dir
         self.summary_path = os.path.join(run_dir, "summary.json")

@@ -72,7 +72,7 @@ def run(source: Optional[str] = None, mesh: str = "Mesh", pose: str = "A", bar: 
     skinned = cmds.ls(cmds.listHistory(mesh) or [], type="skinCluster")
     if cmds.objExists("DeformationSystem") and skinned:
         ts = time.perf_counter()
-        prof = rig_profile.main(mesh=mesh, label=os.path.basename(out["evidence_dir"].rstrip("/")),
+        prof = rig_profile.main(mesh=mesh, label=os.path.basename(os.path.normpath(out["evidence_dir"])),
                                 evidence_dir=os.path.join(out["evidence_dir"], "profile"))
         t["profile"] = round(time.perf_counter() - ts, 2)
         out["profile_path"] = prof["profile_path"]
@@ -101,7 +101,7 @@ def run(source: Optional[str] = None, mesh: str = "Mesh", pose: str = "A", bar: 
             import json
             with open(cmp_["bar_path"]) as fh:
                 bar_label = json.load(fh).get("label", bar)
-            cand = os.path.join(ac.EVIDENCE_ROOT, "profiles", bar_label)
+            cand = os.path.join(ac.evidence_root(), "profiles", bar_label)
             if os.path.isdir(cand) and any(n.startswith("pose_") for n in os.listdir(cand)):
                 bar_profile_dir = cand
             if bar_profile_dir:

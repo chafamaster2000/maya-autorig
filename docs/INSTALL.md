@@ -144,13 +144,22 @@ la versión instalada; corrélo primero en una máquina nueva.
 
 ## 6.b Windows: instalador
 
-Todo lo anterior en un script. PowerShell 5.1 (el que trae Windows) o 7:
+Todo lo anterior en un script. PowerShell 5.1 (el que trae Windows) o 7.
+
+**Windows** — hacé doble clic en `install.bat`. Si preferís una terminal:
+
+```
+install.bat                 rem instala todo
+install.bat -DryRun         rem muestra qué haría, sin tocar nada
+install.bat -SkipPrereqs    rem no instala Python / Node / Claude Code
+```
+
+`install.bat` existe porque Windows bloquea los `.ps1` bajados de internet:
+al hacerles doble clic no pasa nada. El bat los lanza con la política
+correcta. Por debajo es exactamente esto, si lo querés a mano:
 
 ```powershell
-# ver qué haría, sin tocar nada
 powershell -ExecutionPolicy Bypass -File tools\install_windows.ps1 -DryRun
-
-# instalar
 powershell -ExecutionPolicy Bypass -File tools\install_windows.ps1
 ```
 
