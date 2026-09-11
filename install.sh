@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # maya-autorig - macOS / Linux installer. The twin of install.bat.
+# Works with Codex and Claude Code. First time ~5-10 minutes, later runs
+# ~1 minute, a few seconds when nothing changed.
 #
 #   ./install.sh                 from a clone: install everything installable
 #   ./install.sh --dry-run       show what it would do, change nothing

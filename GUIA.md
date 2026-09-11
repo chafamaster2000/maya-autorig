@@ -52,6 +52,9 @@ install.bat -DryRun        (Windows, desde la carpeta bajada)
 que falte Maya o AdvancedSkeleton: instalalos y volvé a pegar el link.
 Correrlo dos veces no rompe nada.
 
+**Cuánto tarda:** la primera vez unos 5-10 minutos (baja Python, Node y los
+agentes); después, un minuto; si no hay nada nuevo, segundos.
+
 ---
 
 ## Paso 2 — Abrir Maya
@@ -74,7 +77,8 @@ O si preferís el comando exacto:
 gauntlet_run(source="C:/personajes/heroe.fbx", pose="A")
 ```
 
-En unos 10 segundos tenés el personaje riggeado y con la piel puesta.
+En unos 10 segundos de máquina tenés el personaje riggeado y con la piel
+puesta (más el minuto o dos que tardes vos en mover markers, si los corregís).
 
 **`pose`** es cómo está parado tu personaje en el archivo:
 

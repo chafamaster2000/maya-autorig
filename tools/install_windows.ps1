@@ -2,7 +2,15 @@
 <#
 .SYNOPSIS
     Set up maya-autorig on Windows end to end: the DCC-MCP packages, the Maya
-    adapter, this skill, and the agent connections (Claude Code and Codex).
+    adapter, this skill, and the agent connections. Works with Codex AND
+    Claude Code: both get the `maya` MCP server and the skill.
+
+    The usual way to run this is not by hand: paste the repository link to
+    Codex or Claude Code ("install https://github.com/chafamaster2000/maya-autorig")
+    and the agent runs tools\bootstrap.ps1, which clones (or updates) and calls
+    this script. Takes about 5-10 minutes the first time (Python, Node and the
+    agent CLIs download), about a minute afterwards, a few seconds when nothing
+    changed.
 
 .DESCRIPTION
     Every step is idempotent and reports OK / SKIP / FAIL; the script exits
@@ -171,7 +179,8 @@ function Install-WithWinget {
 }
 
 Write-Host ''
-Write-Host 'maya-autorig - Windows setup' -ForegroundColor Cyan
+Write-Host 'maya-autorig - Windows setup  (works with Codex and Claude Code)' -ForegroundColor Cyan
+Write-Host 'Usually run for you by an agent after you paste the repo link; first time ~5-10 min, later runs ~1 min.' -ForegroundColor DarkGray
 $repoVersion = 'not a git clone'
 if (Get-Command git -ErrorAction SilentlyContinue) {
     try { $repoVersion = (& git -C (Split-Path -Parent $PSScriptRoot) describe --tags --always 2>$null | Out-String).Trim() } catch { }

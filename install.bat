@@ -1,5 +1,7 @@
 @echo off
-rem maya-autorig - Windows installer.
+rem maya-autorig - Windows installer. Works with Codex and Claude Code.
+rem The easy way: paste the repository link to Codex or Claude Code and let it
+rem run the install (first time ~5-10 min, later ~1 min). By hand:
 rem Double-click this file, or run it from a shell:
 rem     install.bat              install everything installable
 rem     install.bat -DryRun      show what it would do, change nothing

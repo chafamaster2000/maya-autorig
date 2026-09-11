@@ -1,7 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install maya-autorig on Windows straight from the web, without a clone.
+    Install (or update) maya-autorig on Windows straight from the web, without
+    a clone. Works with Codex and Claude Code. First time ~5-10 minutes, later
+    runs ~1 minute, a few seconds when nothing changed.
 
 .DESCRIPTION
     The one-liner an agent (or a person) can run from any PowerShell:

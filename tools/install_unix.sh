@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # maya-autorig - macOS / Linux installer. The shell twin of tools/install_windows.ps1.
+# Works with Codex AND Claude Code: both get the `maya` MCP server and the skill.
+#
+# The usual way to run this is not by hand: paste the repository link to Codex
+# or Claude Code ("install https://github.com/chafamaster2000/maya-autorig") and
+# the agent runs install.sh piped from curl, which clones (or updates) and calls
+# this script. Takes about 5-10 minutes the first time (Python, Node and the
+# agent CLIs download), about a minute afterwards, a few seconds when nothing
+# changed.
 #
 #   Codex / Claude Code --HTTP--> dcc-mcp gateway (127.0.0.1:9765) --> Maya adapter
 #
@@ -58,7 +66,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 maya_running() { pgrep -x Maya >/dev/null 2>&1 || pgrep -f 'maya\.bin' >/dev/null 2>&1; }
 
 echo
-echo "maya-autorig installer (macOS / Linux)  version $VERSION"
+echo "maya-autorig installer (macOS / Linux)  version $VERSION  -- works with Codex and Claude Code"
+echo "usually run for you by an agent after you paste the repo link; first time ~5-10 min, later runs ~1 min"
 echo "repo: $REPO ($(git -C "$REPO" describe --tags --always 2>/dev/null || echo 'not a git clone'))"
 [ "$DRY_RUN" = 1 ] && echo "DRY RUN - nothing will be changed"
 

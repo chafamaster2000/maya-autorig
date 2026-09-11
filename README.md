@@ -13,6 +13,13 @@ markers.propose  ->  fit_from_markers  ->  build_rig  ->  bind_skin
                                                         pose_gallery
 ```
 
+![propose the markers, drag one (its twin mirrors), rig, pose](docs/demo.gif)
+
+*Maya's viewport, recorded frame by frame and sped up: the raw character,
+`markers_propose` (X-ray, markers, mirror), a wrist and a knee dragged --
+the other side follows --, fit, build, bind, and the finished rig posed.
+About 10 seconds of machine time in real life.*
+
 ---
 
 ## English
@@ -82,6 +89,13 @@ It ends with **"What changed -> what to do"**: the restarts you owe (Maya if
 the skill copy changed and it was open; a new Codex session if the server
 was just added; `/mcp` in Claude Code), and nothing else. Full chain and
 per-platform detail in [`docs/INSTALL.md`](docs/INSTALL.md).
+
+**How long it takes.** Installing: about 5-10 minutes the first time (Python,
+Node.js and the agent CLIs download), about a minute on later runs, a few
+seconds when nothing changed. Rigging a character: about 10 seconds of
+machine time from raw file to bound, verified rig (fit ~1 s, build ~5 s,
+bind ~2 s on a 3.5k-vertex body), plus the minute or two you spend dragging
+markers if you correct them.
 
 ### Use
 
@@ -213,6 +227,13 @@ Termina con **"What changed -> what to do"**: los reinicios que debés (Maya
 si cambió la copia de la skill y estaba abierta; una sesión nueva de Codex si
 recién se agregó el servidor; `/mcp` en Claude Code), y nada más. La cadena
 completa está en [`docs/INSTALL.md`](docs/INSTALL.md).
+
+**Cuánto tarda.** Instalar: unos 5-10 minutos la primera vez (bajan Python,
+Node.js y los CLI de los agentes), un minuto las siguientes, unos segundos si
+no cambió nada. Riggear un personaje: unos 10 segundos de máquina desde el
+archivo crudo hasta el rig atado y verificado (fit ~1 s, build ~5 s, bind
+~2 s en un cuerpo de 3.500 vértices), más el minuto o dos que tardes en
+mover markers si los corregís.
 
 ### Uso
 
