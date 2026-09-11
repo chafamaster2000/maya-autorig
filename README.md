@@ -90,6 +90,14 @@ markers_propose(mesh="Mesh", pose="A")     # drag the mk_* locators if needed
 harness_run(mesh="Mesh")                   # fit -> build -> bind -> verify -> props
 ```
 
+`markers_propose` puts the viewport in **marker mode**, Mixamo-style: X-ray
+on, the body and its props on a reference layer so a click always lands on
+a marker, camera from the front, Move tool armed, and left/right markers
+mirrored both ways -- drag either side, the other follows -- while
+`AutoRigMarkers.mirror` is on (it is by default). `harness_run` leaves the
+mode once the skin is bound and verified: X-ray off, mesh selectable,
+markers hidden. A stage failing before that keeps it, so you can re-drag.
+
 or the whole thing from a raw file:
 
 ```
@@ -212,6 +220,15 @@ completa está en [`docs/INSTALL.md`](docs/INSTALL.md).
 markers_propose(mesh="Mesh", pose="A")     # arrastrá los locators mk_* si hace falta
 harness_run(mesh="Mesh")                   # fit -> build -> bind -> verify -> props
 ```
+
+`markers_propose` deja el viewport en **modo markers**, estilo Mixamo: rayos
+X, el cuerpo y sus props en una layer de referencia para que el clic caiga
+siempre en un marker, cámara de frente, herramienta Move lista, y los
+markers izquierdo/derecho espejados en los dos sentidos -- arrastrás
+cualquiera y el otro lo sigue -- mientras `AutoRigMarkers.mirror` esté
+prendido (viene prendido). `harness_run` sale del modo cuando la piel quedó
+atada y verificada: rayos X apagados, malla seleccionable, markers ocultos.
+Si una etapa falla antes, el modo se queda, así podés volver a arrastrar.
 
 o todo de una desde el archivo crudo:
 

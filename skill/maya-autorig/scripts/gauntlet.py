@@ -50,7 +50,7 @@ def run(source: Optional[str] = None, mesh: str = "Mesh", pose: str = "A", bar: 
     out["scene"] = cmds.file(query=True, sceneName=True)
 
     ts = time.perf_counter()
-    prop = mk.propose(mesh, pose=pose)
+    prop = mk.propose(mesh, pose=pose, ui=False)   # no human step: no marker mode
     out["pose_detected"] = prop.get("metrics", prop).get("pose_detected")
     t["propose"] = round(time.perf_counter() - ts, 2)
     ts = time.perf_counter()

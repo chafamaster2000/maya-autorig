@@ -29,6 +29,7 @@ import build_rig
 import checkpoint
 import attach_props
 import fit_from_markers
+import markers
 import pose_gallery
 import verify_skin
 import review
@@ -86,6 +87,13 @@ def run(mesh: str = "Mesh", template: str = "bipedBendy.ma", fingers: Any = "aut
             stage("props", attach_props.main, mesh=mesh, evidence_dir=evidence_dir, compact=False)
         stage("skin", verify_skin.main, mesh=mesh, evidence_dir=evidence_dir, compact=False)
         stage("checkpoint_skin", checkpoint.main, suffix="skin")
+        # The person's part is over here: the markers are spent, the rig is
+        # bound and verified. X-ray off, mesh selectable, markers hidden. The
+        # pose gallery below is a report -- a pose that reads badly is fixed
+        # in weights or heuristics, never by re-dragging markers -- so it does
+        # not keep the mode. A failed stage above does: the markers stay at
+        # hand for a re-drag and a re-run from `fit`.
+        out["marker_mode"] = markers.exit_mode()
         if gallery:
             stage("pose_gallery", pose_gallery.main, mesh=mesh, evidence_dir=evidence_dir, compact=False)
         out["passed"] = all(e["passed"] for e in ledger)

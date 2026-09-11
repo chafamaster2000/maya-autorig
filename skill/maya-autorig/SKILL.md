@@ -11,7 +11,7 @@ compatibility: "Python 3.9+; Maya 2024-2027 (numpy inside Maya); AdvancedSkeleto
 metadata:
   dcc-mcp:
     dcc: maya
-    version: "0.3.0"
+    version: "0.4.0"
     layer: domain
     tags: ["maya", "rigging", "skinning", "advancedskeleton", "autorig", "mixamo", "markers"]
     search-hint: "auto rig, autorig, mixamo markers, fit skeleton, build rig, bind skin, deformation test"
@@ -51,10 +51,17 @@ shows `mcp__maya__call`); the verbs are the same.
    like Mixamo. Model must be cm, frozen, history-free.
 2. `markers_propose(mesh, pose)` — creates 8 required (red) + 4 optional
    (yellow) locators under `AutoRigMarkers`, pre-placed from geometry, plus a
-   front render. Hand over: the user drags whatever is wrong and says done.
+   front render, and puts the viewport in **marker mode**: X-ray on, body and
+   props on a reference layer (a click lands on a locator, never on the
+   mesh), camera from the front, Move tool armed, and L/R pairs mirrored
+   both ways -- drag either side, the other follows -- while
+   `AutoRigMarkers.mirror` is on (default). Chin and groin start on the
+   centre line and stay free. Hand over: the user drags whatever is wrong
+   and says done. `markers_mode(action="exit")` leaves the mode by hand.
 3. `harness_run(mesh)` — fit → checkpoint → build → checkpoint → bind →
    deformation test → checkpoint. Stops at the first failing stage; the
-   previous checkpoint is the recovery point.
+   previous checkpoint is the recovery point. Once the skin passed it leaves
+   *marker mode* (see below): X-ray off, mesh selectable, markers hidden.
 4. `harness_run` returns a `review` block. If `skip_review` is true, the
    content (fit positions, bind settings) is unchanged since the last PASS:
    **do not review again**. Otherwise make **ONE** fresh-context review of

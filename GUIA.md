@@ -87,6 +87,15 @@ En unos 10 segundos tenés el personaje riggeado y con la piel puesta.
 Si le errás no pasa nada grave: la herramienta se guía por los marcadores, no
 por la pose.
 
+**Si querés corregir los marcadores a mano** (`markers_propose` primero,
+`harness_run` después): al proponerlos, Maya queda lista para eso solo:
+ves el cuerpo en rayos X con los puntos adentro, el clic agarra siempre un
+punto (nunca el cuerpo), la cámara mira de frente y la herramienta Move ya
+está activa. Movés un punto de un lado y el del otro lado se mueve solo,
+espejado, como en Mixamo; si tu personaje es asimétrico, apagá `mirror` en
+el grupo `AutoRigMarkers`. Cuando el rig termina, todo vuelve a la normalidad
+solo.
+
 ---
 
 ## Dónde quedan las pruebas de que salió bien
