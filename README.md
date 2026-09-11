@@ -17,7 +17,8 @@ markers.propose  ->  fit_from_markers  ->  build_rig  ->  bind_skin
 
 *Maya's viewport, recorded frame by frame and sped up: the raw character,
 `markers_propose` (X-ray, markers, mirror), a wrist and a knee dragged --
-the other side follows --, fit, build, bind, and the finished rig posed.
+the other side follows --, fit, build, bind, and the finished rig crouching
+on IK legs (the pelvis dropped, feet planted), from the front and the side.
 About 10 seconds of machine time in real life.*
 
 ---
