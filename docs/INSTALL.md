@@ -294,6 +294,11 @@ powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1 -DryRun
 powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1
 ```
 
+```bash
+tools/repair_gateway.sh --dry-run      # macOS / Linux
+tools/repair_gateway.sh --start        # limpia y, si nadie escucha, levanta un gateway acá mismo
+```
+
 Causa (vista de verdad el 2026-09-10): un crash de Maya, o dos Mayas abiertas
 a la vez, dejan filas `__gateway__` en el registro reclamando un puerto donde
 no escucha nadie. Cada gateway nuevo las sonda, no obtiene respuesta y en vez
@@ -306,3 +311,12 @@ Por eso una fila de gateway se juzga **por su puerto**, no por un proceso: si
 algo contesta ahí, la fila está viva y no se toca (incluida la del gateway que
 está funcionando ahora). Las demás filas se juzgan por su pid.
 `services.json` se respalda antes de reescribirse.
+
+Visto el 2026-09-12 al matar una Maya trabada: el sidecar de la Maya nueva
+registró su fila `__gateway__`, lanzó un gateway que salió por la fila
+fantasma anterior, esperó 15 s y murió; y con el sidecar muerto **el plugin
+dentro de Maya gira en el callback idle al ~90 % de CPU** (el hilo principal
+dentro de `_core.abi3.so`, medido con `sample`). Parece que Maya "no
+termina de abrir": está abierta, girando. La secuencia que funcionó:
+`repair_gateway.sh --start` (registro limpio + gateway sano), y recién
+después reabrir Maya, de a una.

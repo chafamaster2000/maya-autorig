@@ -125,6 +125,8 @@ en la carpeta y corré:
 powershell -ExecutionPolicy Bypass -File tools\repair_gateway.ps1
 ```
 
+(en Mac: `tools/repair_gateway.sh --start`)
+
 Después destildá y volvé a tildar `dcc_mcp_maya_plugin` en el Plug-in Manager
 de Maya (Windows > Settings/Preferences > Plug-in Manager). Después, en Claude
 Code escribí `/mcp` para reconectar; en Codex cerrá la sesión y abrí una nueva
